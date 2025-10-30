@@ -1,0 +1,1552 @@
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+from PIL import Image, ImageTk, ImageDraw, ImageFont
+import os
+import platform
+import numpy as np
+import threading
+from modelos.svm_model import SVMModel
+from modelos.cnn_model import CNNModel
+from modelos.transformer_model import TransformerModel
+
+# Helper: detectar sistema para tipografías
+DEFAULT_FONT = "Segoe UI" if platform.system() == "Windows" else "Helvetica"
+
+class ScrollableImageApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Analizador de Cenicilla en Hojas")
+        self.root.geometry("1400x900")
+        self.root.minsize(1200, 800)
+        self.root.config(bg="#F8FAFF")
+        
+        # Paleta premium mejorada
+        self.colors = {
+            'bg': '#F8FAFF',
+            'card': '#FFFFFF',
+            'primary': '#6366F1',
+            'primary_hover': '#4F46E5',
+            'success': '#10B981',
+            'success_hover': '#059669',
+            'warning': '#F59E0B',
+            'danger': '#EF4444',
+            'text_dark': '#0f172a',
+            'text_medium': '#475569',
+            'text_light': '#94a3b8',
+            'border': '#E0E7FF',
+            'shadow': '#C7D2FE',
+            'accent': '#8B5CF6',
+            'accent_light': '#DDD6FE'
+        }
+        
+        self.image_path = None
+        self.models = {}
+        self.analysis_in_progress = False
+        
+        # Inicializar modelos
+        self.init_models()
+        self.create_widgets()
+    
+    def init_models(self):
+        """Inicializar los tres modelos"""
+        try:
+            print("\n" + "="*60)
+            print("🤖 INICIALIZANDO MODELOS")
+            print("="*60)
+            
+            self.models['SVM'] = SVMModel()
+            self.models['CNN'] = CNNModel()
+            self.models['Transformer'] = TransformerModel()
+            
+            # Verificar estado de cada modelo
+            models_status = []
+            for name, model in self.models.items():
+                status = "✅ Entrenado" if model.is_trained else "❌ No entrenado"
+                models_status.append(f"{name}: {status}")
+                print(f"   {name}: {status}")
+            
+            # Verificar si algún modelo no está entrenado
+            untrained = [name for name, model in self.models.items() if not model.is_trained]
+            
+            if untrained:
+                print(f"\n⚠️ ADVERTENCIA: Los siguientes modelos NO están entrenados:")
+                for name in untrained:
+                    print(f"   - {name}")
+                print(f"\n💡 Para entrenar estos modelos:")
+                print(f"   1. Ejecuta: python etiquetador.py")
+                print(f"   2. Etiqueta al menos 50 imágenes por modelo")
+                print(f"   3. Reinicia la aplicación")
+            else:
+                print(f"\n✅ Todos los modelos están listos para usar")
+            
+            print("="*60 + "\n")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Error inicializando modelos: {e}")
+    
+    def create_widgets(self):
+        # Canvas principal con scroll
+        self.canvas = tk.Canvas(self.root, bg=self.colors['bg'], highlightthickness=0)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        
+        # Scrollbar estilizada
+        style = ttk.Style()
+        try:
+            style.theme_use('clam')
+        except:
+            pass
+        
+        scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=self.canvas.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Frame principal
+        self.main_frame = tk.Frame(self.canvas, bg=self.colors['bg'])
+        self.canvas_window = self.canvas.create_window((0,0), window=self.main_frame, anchor="nw")
+        self.main_frame.bind("<Configure>", self.on_frame_configure)
+        self.canvas.bind("<Configure>", self.on_canvas_configure)
+        self.canvas.bind_all("<MouseWheel>", self.on_mousewheel)
+        
+        # Container con padding
+        content = tk.Frame(self.main_frame, bg=self.colors['bg'])
+        content.pack(expand=True, fill="both", padx=55, pady=35)
+        
+        # ========== HEADER MEJORADO ==========
+        header = tk.Frame(content, bg=self.colors['bg'])
+        header.pack(fill="x", pady=(0, 25), anchor="w")
+        
+        # Fila 1: Logo + Título
+        row1 = tk.Frame(header, bg=self.colors['bg'])
+        row1.pack(anchor="w", pady=(0, 10))
+        
+        logo = tk.Label(row1, text="🌿", font=(DEFAULT_FONT, 42), bg=self.colors['bg'])
+        logo.pack(side="left", padx=(0, 15))
+        
+        title = tk.Label(row1, text="Analizador de Cenicilla en Hojas", 
+                        font=(DEFAULT_FONT, 32, "bold"),
+                        bg=self.colors['bg'], 
+                        fg=self.colors['text_dark'])
+        title.pack(side="left")
+        
+        # Fila 2: Descripción
+        row2 = tk.Frame(header, bg=self.colors['bg'])
+        row2.pack(anchor="w", pady=(0, 12))
+        
+        desc = tk.Label(row2, 
+                       text="Detección inteligente de cenicilla • Análisis multi-modelo • Clasificación por severidad • Evaluación comparativa",
+                       font=(DEFAULT_FONT, 12),
+                       bg=self.colors['bg'], 
+                       fg=self.colors['text_medium'])
+        desc.pack(anchor="w")
+        
+        # Fila 3: Badges de modelos
+        row3 = tk.Frame(header, bg=self.colors['bg'])
+        row3.pack(anchor="w")
+        
+        model_badges = [
+            ("🤖 SVM", self.colors['primary']),
+            ("🧠 CNN", self.colors['accent']),
+            ("⚡ Transformer", self.colors['warning']),
+            ("📊 5 Clases", self.colors['success'])
+        ]
+        
+        for text, color in model_badges:
+            badge = tk.Label(row3, text=text, 
+                           font=(DEFAULT_FONT, 10, "bold"),
+                           bg=color, fg="white", 
+                           padx=18, pady=8, relief="flat")
+            badge.pack(side="left", padx=(0, 8))
+        
+        # ========== CARD PRINCIPAL MEJORADA ==========
+        card_outer = tk.Frame(content, bg=self.colors['shadow'])
+        card_outer.pack(fill="both", expand=True, pady=(0, 5))
+        
+        self.main_card = tk.Frame(card_outer, 
+                                  bg=self.colors['card'],
+                                  highlightbackground=self.colors['primary'],
+                                  highlightthickness=3,
+                                  relief="flat")
+        self.main_card.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        # Barra decorativa superior
+        header_bar = tk.Frame(self.main_card, bg=self.colors['card'], height=12)
+        header_bar.pack(fill="x")
+        
+        bar1 = tk.Frame(header_bar, bg=self.colors['primary'], height=12)
+        bar1.pack(side="left", fill="both", expand=True)
+        
+        bar2 = tk.Frame(header_bar, bg=self.colors['accent'], height=12)
+        bar2.pack(side="left", fill="both", expand=True)
+        
+        # Área de imagen
+        img_area = tk.Frame(self.main_card, bg=self.colors['card'])
+        img_area.pack(fill="both", expand=True, padx=40, pady=35)
+        
+        # Preview frame con estilo glass
+        self.preview_frame = tk.Frame(img_area, 
+                                      bg=self.colors['bg'],
+                                      highlightbackground=self.colors['border'],
+                                      highlightthickness=3,
+                                      relief="flat")
+        self.preview_frame.pack(fill="both", expand=True)
+        
+        preview_inner = tk.Frame(self.preview_frame, bg=self.colors['bg'])
+        preview_inner.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        self.preview_label = tk.Label(preview_inner, text="", bg=self.colors['bg'])
+        self.preview_label.pack(expand=True, fill="both")
+        
+        # ========== PLACEHOLDER MEJORADO ==========
+        self.placeholder = tk.Frame(preview_inner, bg=self.colors['bg'])
+        self.placeholder.place(relx=0.5, rely=0.5, anchor="center")
+        
+        # Frame decorativo con borde
+        deco_frame = tk.Frame(self.placeholder, 
+                             bg=self.colors['border'],
+                             highlightbackground=self.colors['primary'],
+                             highlightthickness=2,
+                             relief="flat")
+        deco_frame.pack(padx=30, pady=30)
+        
+        # Interior del frame
+        inner_frame = tk.Frame(deco_frame, bg=self.colors['bg'])
+        inner_frame.pack(padx=50, pady=40)
+        
+        # Icono principal
+        icon = tk.Label(inner_frame, text="🌿", 
+                       font=(DEFAULT_FONT, 80),
+                       bg=self.colors['bg'])
+        icon.pack(pady=(10, 20))
+        
+        # Texto principal
+        text1 = tk.Label(inner_frame, 
+                        text="Análisis de Cenicilla en Hojas",
+                        font=(DEFAULT_FONT, 16, "bold"),
+                        bg=self.colors['bg'], 
+                        fg=self.colors['text_dark'])
+        text1.pack(pady=(0, 8))
+        
+        # Subtexto 1
+        text2 = tk.Label(inner_frame, 
+                        text="Haz clic en 'Analizar Dataset' para procesar todas las imágenes",
+                        font=(DEFAULT_FONT, 12),
+                        bg=self.colors['bg'], 
+                        fg=self.colors['text_medium'])
+        text2.pack(pady=(0, 5))
+        
+        # Subtexto 2
+        text3 = tk.Label(inner_frame, 
+                        text="o en 'Cargar Imagen' para analizar una imagen individual",
+                        font=(DEFAULT_FONT, 12),
+                        bg=self.colors['bg'], 
+                        fg=self.colors['text_medium'])
+        text3.pack(pady=(0, 15))
+        
+        # Separador
+        sep = tk.Frame(inner_frame, bg=self.colors['border'], height=2)
+        sep.pack(fill="x", padx=20, pady=10)
+        
+        # Info de modelos
+        text4 = tk.Label(inner_frame, 
+                        text="🤖 Se utilizarán 3 modelos: SVM, CNN y Transformer",
+                        font=(DEFAULT_FONT, 11),
+                        bg=self.colors['bg'], 
+                        fg=self.colors['primary'])
+        text4.pack(pady=(5, 0))
+        
+        # Info de clases
+        text5 = tk.Label(inner_frame, 
+                        text="📊 Clasificación en 5 niveles de severidad",
+                        font=(DEFAULT_FONT, 11),
+                        bg=self.colors['bg'], 
+                        fg=self.colors['success'])
+        text5.pack(pady=(3, 10))
+        
+        # Info bar
+        self.info_bar = tk.Frame(img_area, bg=self.colors['card'], height=60)
+        self.info_bar.pack(fill="x", pady=(25, 0))
+        
+        self.info_label = tk.Label(self.info_bar, text="",
+                                   font=(DEFAULT_FONT, 12),
+                                   bg=self.colors['card'],
+                                   fg=self.colors['text_medium'])
+        self.info_label.pack(expand=True, fill="x", pady=10)
+        
+        # ========== BOTONES MEJORADOS ==========
+        btn_section = tk.Frame(self.main_card, bg=self.colors['card'])
+        btn_section.pack(fill="x", pady=(0, 30))
+        
+        btn_container = tk.Frame(btn_section, bg=self.colors['card'])
+        btn_container.pack()
+        
+        # Botón Analizar Dataset
+        analyze_shadow = tk.Frame(btn_container, bg=self.colors['shadow'])
+        analyze_shadow.pack(side="left", padx=12)
+        
+        self.btn_analyze = tk.Button(analyze_shadow,
+                                     text="🔍  Analizar Dataset",
+                                     font=(DEFAULT_FONT, 14, "bold"),
+                                     bg=self.colors['primary'],
+                                     fg="white",
+                                     activebackground=self.colors['primary_hover'],
+                                     activeforeground="white",
+                                     relief="flat",
+                                     padx=35,
+                                     pady=16,
+                                     cursor="hand2",
+                                     command=self.analyze_dataset,
+                                     borderwidth=0)
+        self.btn_analyze.pack(padx=3, pady=3)
+        self.add_hover(self.btn_analyze, self.colors['primary'], self.colors['primary_hover'])
+        
+        # Botón Cargar Imagen Individual
+        upload_shadow = tk.Frame(btn_container, bg=self.colors['shadow'])
+        upload_shadow.pack(side="left", padx=12)
+        
+        self.btn_upload = tk.Button(upload_shadow, 
+                                    text="📁  Cargar Imagen",
+                                    font=(DEFAULT_FONT, 13, "bold"),
+                                    bg=self.colors['success'],
+                                    fg="white",
+                                    activebackground=self.colors['success_hover'],
+                                    activeforeground="white",
+                                    relief="flat",
+                                    padx=30,
+                                    pady=14,
+                                    cursor="hand2",
+                                    command=self.select_image,
+                                    borderwidth=0)
+        self.btn_upload.pack(padx=3, pady=3)
+        self.add_hover(self.btn_upload, self.colors['success'], self.colors['success_hover'])
+        
+        # Botón Limpiar
+        clear_shadow = tk.Frame(btn_container, bg=self.colors['shadow'])
+        clear_shadow.pack(side="left", padx=12)
+        
+        self.btn_clear = tk.Button(clear_shadow,
+                                   text="🧹  Limpiar",
+                                   font=(DEFAULT_FONT, 13),
+                                   bg=self.colors['border'],
+                                   fg=self.colors['text_dark'],
+                                   activebackground=self.colors['shadow'],
+                                   activeforeground=self.colors['text_dark'],
+                                   relief="flat",
+                                   padx=25,
+                                   pady=14,
+                                   cursor="hand2",
+                                   command=self.clear_image,
+                                   borderwidth=0)
+        self.btn_clear.pack(padx=3, pady=3)
+        self.add_hover(self.btn_clear, self.colors['border'], self.colors['shadow'])
+        
+        # Botón Configurar Referencias
+        config_shadow = tk.Frame(btn_container, bg=self.colors['shadow'])
+        config_shadow.pack(side="left", padx=12)
+        
+        self.btn_config = tk.Button(config_shadow,
+                                    text="⚙️  Configurar Referencias",
+                                    font=(DEFAULT_FONT, 13),
+                                    bg=self.colors['accent'],
+                                    fg="white",
+                                    activebackground=self.colors['primary'],
+                                    activeforeground="white",
+                                    relief="flat",
+                                    padx=25,
+                                    pady=14,
+                                    cursor="hand2",
+                                    command=self.configure_references,
+                                    borderwidth=0)
+        self.btn_config.pack(padx=3, pady=3)
+        self.add_hover(self.btn_config, self.colors['accent'], self.colors['primary'])
+        
+        # Frame para análisis
+        self.analysis_frame = tk.Frame(content, bg=self.colors['bg'])
+        
+        # ========== FOOTER MEJORADO ==========
+        footer = tk.Frame(content, bg=self.colors['bg'])
+        footer.pack(fill="x", pady=(30, 0))
+        
+        line = tk.Frame(footer, bg=self.colors['border'], height=2)
+        line.pack(fill="x", pady=(0, 15))
+        
+        footer_text = tk.Label(footer, 
+                              text="© 2024 Analizador de Cenicilla  •  Powered by Multi-Model AI Technology",
+                              font=(DEFAULT_FONT, 11),
+                              bg=self.colors['bg'],
+                              fg=self.colors['text_light'])
+        footer_text.pack(pady=5)
+        
+        version = tk.Label(footer, text="Version 2.0",
+                          font=(DEFAULT_FONT, 9),
+                          bg=self.colors['bg'],
+                          fg=self.colors['text_light'])
+        version.pack()
+    
+    def configure_references(self):
+        """Abrir ventana para configurar imágenes de referencia"""
+        config_window = tk.Toplevel(self.root)
+        config_window.title("Configurar Imágenes de Referencia")
+        config_window.geometry("900x700")
+        config_window.config(bg=self.colors['bg'])
+        config_window.transient(self.root)
+        config_window.grab_set()
+        
+        # Título
+        title_frame = tk.Frame(config_window, bg=self.colors['primary'])
+        title_frame.pack(fill="x")
+        
+        title = tk.Label(
+            title_frame,
+            text="⚙️ CONFIGURAR IMÁGENES DE REFERENCIA",
+            font=(DEFAULT_FONT, 18, "bold"),
+            bg=self.colors['primary'],
+            fg="white"
+        )
+        title.pack(pady=20)
+        
+        # Descripción
+        desc_frame = tk.Frame(config_window, bg=self.colors['card'])
+        desc_frame.pack(fill="x", padx=20, pady=15)
+        
+        desc = tk.Label(
+            desc_frame,
+            text="Carga imágenes de referencia para cada clase de cenicilla.\n"
+                 "Estas imágenes se mostrarán en los resultados del análisis.",
+            font=(DEFAULT_FONT, 11),
+            bg=self.colors['card'],
+            fg=self.colors['text_medium'],
+            justify="center"
+        )
+        desc.pack(pady=10)
+        
+        # Crear carpeta referencias si no existe
+        if not os.path.exists("referencias"):
+            os.makedirs("referencias")
+            info = tk.Label(
+                desc_frame,
+                text="✅ Carpeta 'referencias' creada automáticamente",
+                font=(DEFAULT_FONT, 10, "bold"),
+                bg=self.colors['card'],
+                fg=self.colors['success']
+            )
+            info.pack(pady=5)
+        
+        # Canvas con scroll para las clases
+        canvas_frame = tk.Frame(config_window, bg=self.colors['bg'])
+        canvas_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        canvas = tk.Canvas(canvas_frame, bg=self.colors['bg'], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
+        classes_frame = tk.Frame(canvas, bg=self.colors['bg'])
+        
+        classes_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=classes_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        class_names = [
+            "Resistente",
+            "Moderadamente Tolerante",
+            "Ligeramente Tolerante",
+            "Susceptible",
+            "Altamente Susceptible"
+        ]
+        
+        class_colors = {
+            0: "#10B981",
+            1: "#84CC16",
+            2: "#F59E0B",
+            3: "#F97316",
+            4: "#EF4444"
+        }
+        
+        # Crear tarjeta para cada clase
+        self.reference_labels = {}
+        
+        for class_num in range(5):
+            # Frame de la clase
+            class_card = tk.Frame(
+                classes_frame,
+                bg=self.colors['card'],
+                highlightbackground=class_colors[class_num],
+                highlightthickness=3
+            )
+            class_card.pack(fill="x", padx=10, pady=10)
+            
+            # Header de la clase
+            header = tk.Frame(class_card, bg=class_colors[class_num])
+            header.pack(fill="x")
+            
+            tk.Label(
+                header,
+                text=f"CLASE {class_num} - {class_names[class_num]}",
+                font=(DEFAULT_FONT, 13, "bold"),
+                bg=class_colors[class_num],
+                fg="white"
+            ).pack(pady=12)
+            
+            # Contenido
+            content = tk.Frame(class_card, bg=self.colors['card'])
+            content.pack(fill="x", padx=15, pady=15)
+            
+            # Imagen actual
+            img_frame = tk.Frame(content, bg=self.colors['bg'])
+            img_frame.pack(side="left", padx=10)
+            
+            ref_img = self.load_reference_image(class_num)
+            ref_photo = ImageTk.PhotoImage(ref_img)
+            
+            img_label = tk.Label(img_frame, image=ref_photo, bg=self.colors['bg'])
+            img_label.image = ref_photo
+            img_label.pack()
+            
+            self.reference_labels[class_num] = img_label
+            
+            # Info y botones
+            info_frame = tk.Frame(content, bg=self.colors['card'])
+            info_frame.pack(side="left", fill="both", expand=True, padx=20)
+            
+            # Estado actual
+            reference_exists = False
+            reference_filename = ""
+            for ext in ['.png', '.jpg', '.jpeg']:
+                reference_path = f"referencias/clase_{class_num}{ext}"
+                if os.path.exists(reference_path):
+                    reference_exists = True
+                    reference_filename = f"clase_{class_num}{ext}"
+                    break
+            
+            if reference_exists:
+                status_text = f"✅ Imagen configurada: {reference_filename}"
+                status_color = self.colors['success']
+            else:
+                status_text = f"⚠️ No hay imagen de referencia"
+                status_color = self.colors['warning']
+            
+            status_label = tk.Label(
+                info_frame,
+                text=status_text,
+                font=(DEFAULT_FONT, 10, "bold"),
+                bg=self.colors['card'],
+                fg=status_color
+            )
+            status_label.pack(anchor="w", pady=(0, 10))
+            
+            # Descripción
+            desc_text = f"Esta clase representa: {class_names[class_num].upper()}"
+            tk.Label(
+                info_frame,
+                text=desc_text,
+                font=(DEFAULT_FONT, 10),
+                bg=self.colors['card'],
+                fg=self.colors['text_medium'],
+                wraplength=350,
+                justify="left"
+            ).pack(anchor="w", pady=(0, 15))
+            
+            # Botón para cargar imagen
+            btn_frame = tk.Frame(info_frame, bg=self.colors['card'])
+            btn_frame.pack(anchor="w")
+            
+            load_btn = tk.Button(
+                btn_frame,
+                text=f"📁 Cargar Imagen para Clase {class_num}",
+                font=(DEFAULT_FONT, 11, "bold"),
+                bg=class_colors[class_num],
+                fg="white",
+                padx=20,
+                pady=10,
+                cursor="hand2",
+                relief="flat",
+                command=lambda cn=class_num, il=img_label, sl=status_label: 
+                    self.load_reference_for_class(cn, il, sl)
+            )
+            load_btn.pack(side="left", padx=(0, 10))
+            
+            # Botón para eliminar
+            reference_exists_for_delete = False
+            for ext in ['.png', '.jpg', '.jpeg']:
+                if os.path.exists(f"referencias/clase_{class_num}{ext}"):
+                    reference_exists_for_delete = True
+                    break
+            
+            if reference_exists_for_delete:
+                delete_btn = tk.Button(
+                    btn_frame,
+                    text="🗑️ Eliminar",
+                    font=(DEFAULT_FONT, 10),
+                    bg=self.colors['danger'],
+                    fg="white",
+                    padx=15,
+                    pady=10,
+                    cursor="hand2",
+                    relief="flat",
+                    command=lambda cn=class_num, il=img_label, sl=status_label: 
+                        self.delete_reference_for_class(cn, il, sl)
+                )
+                delete_btn.pack(side="left")
+        
+        # Botón cerrar
+        close_btn = tk.Button(
+            config_window,
+            text="✅ Cerrar",
+            font=(DEFAULT_FONT, 13, "bold"),
+            bg=self.colors['success'],
+            fg="white",
+            padx=40,
+            pady=12,
+            cursor="hand2",
+            relief="flat",
+            command=config_window.destroy
+        )
+        close_btn.pack(pady=20)
+    
+    def load_reference_for_class(self, class_num, img_label, status_label):
+        """Cargar imagen de referencia para una clase específica"""
+        path = filedialog.askopenfilename(
+            title=f"Seleccionar imagen de referencia para Clase {class_num}",
+            filetypes=[
+                ("Imágenes", "*.png *.jpg *.jpeg *.gif *.bmp"),
+                ("JPEG", "*.jpg *.jpeg"),
+                ("PNG", "*.png"),
+                ("Todos", "*.*")
+            ]
+        )
+        
+        if path:
+            try:
+                # Abrir imagen
+                img = Image.open(path)
+                
+                # Determinar extensión original
+                _, ext = os.path.splitext(path)
+                if ext.lower() not in ['.png', '.jpg', '.jpeg']:
+                    ext = '.png'
+                
+                reference_path = f"referencias/clase_{class_num}{ext.lower()}"
+                
+                # Convertir a RGB si es necesario (para PNG con transparencia)
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    if ext.lower() in ['.jpg', '.jpeg']:
+                        # Para JPEG, crear fondo blanco
+                        background = Image.new('RGB', img.size, (255, 255, 255))
+                        if img.mode == 'P':
+                            img = img.convert('RGBA')
+                        background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                        img = background
+                    # Para PNG, mantener transparencia
+                
+                # Guardar imagen
+                if ext.lower() == '.png':
+                    img.save(reference_path, "PNG")
+                else:
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    img.save(reference_path, "JPEG", quality=95)
+                
+                # Actualizar preview
+                ref_img = self.load_reference_image(class_num)
+                ref_photo = ImageTk.PhotoImage(ref_img)
+                img_label.config(image=ref_photo)
+                img_label.image = ref_photo
+                
+                # Actualizar status
+                status_label.config(
+                    text=f"✅ Imagen configurada: clase_{class_num}{ext.lower()}",
+                    fg=self.colors['success']
+                )
+                
+                messagebox.showinfo(
+                    "Éxito",
+                    f"Imagen de referencia para Clase {class_num} cargada correctamente"
+                )
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo cargar la imagen:\n{e}")
+    
+    def delete_reference_for_class(self, class_num, img_label, status_label):
+        """Eliminar imagen de referencia para una clase"""
+        # Buscar archivo en cualquier formato
+        deleted = False
+        for ext in ['.png', '.jpg', '.jpeg']:
+            reference_path = f"referencias/clase_{class_num}{ext}"
+            if os.path.exists(reference_path):
+                if messagebox.askyesno(
+                    "Confirmar",
+                    f"¿Eliminar imagen de referencia para Clase {class_num}?"
+                ):
+                    try:
+                        os.remove(reference_path)
+                        deleted = True
+                    except Exception as e:
+                        messagebox.showerror("Error", f"No se pudo eliminar:\n{e}")
+                        return
+                break
+        
+        if deleted:
+            # Actualizar preview
+            ref_img = self.load_reference_image(class_num)
+            ref_photo = ImageTk.PhotoImage(ref_img)
+            img_label.config(image=ref_photo)
+            img_label.image = ref_photo
+            
+            # Actualizar status
+            status_label.config(
+                text=f"⚠️ No hay imagen de referencia",
+                fg=self.colors['warning']
+            )
+            
+            messagebox.showinfo("Éxito", "Imagen de referencia eliminada")
+    
+    def add_hover(self, widget, normal, hover):
+        widget.bind("<Enter>", lambda e: widget.config(bg=hover))
+        widget.bind("<Leave>", lambda e: widget.config(bg=normal))
+    
+    def on_frame_configure(self, e=None):
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+    
+    def on_canvas_configure(self, e):
+        self.canvas.itemconfig(self.canvas_window, width=e.width)
+    
+    def on_mousewheel(self, e):
+        if platform.system() == "Windows":
+            self.canvas.yview_scroll(int(-1*(e.delta/120)), "units")
+        else:
+            self.canvas.yview_scroll(int(-1*e.delta), "units")
+    
+    def select_image(self):
+        path = filedialog.askopenfilename(
+            title="Seleccionar imagen",
+            filetypes=[
+                ("Imágenes", "*.png *.jpg *.jpeg *.gif *.bmp *.webp *.tiff"),
+                ("PNG", "*.png"),
+                ("JPEG", "*.jpg *.jpeg"),
+                ("Todos", "*.*")
+            ]
+        )
+        if path:
+            self.image_path = path
+            self.display_image(path)
+    
+    def display_image(self, path):
+        try:
+            self.placeholder.place_forget()
+            
+            img = Image.open(path)
+            original = img.size
+            
+            img.thumbnail((800, 500), Image.Resampling.LANCZOS)
+            photo = ImageTk.PhotoImage(img)
+            
+            self.preview_label.config(image=photo, bg=self.colors['card'])
+            self.preview_label.image = photo
+            
+            name = os.path.basename(path)
+            size = os.path.getsize(path) / 1024
+            
+            info = f"✅ Imagen cargada: {name}  •  {original[0]}×{original[1]} px  •  {size:.1f} KB"
+            self.info_label.config(text=info, fg=self.colors['success'], font=(DEFAULT_FONT, 12, "bold"))
+            
+            self.preview_frame.config(bg=self.colors['card'])
+            self.preview_label.config(bg=self.colors['card'])
+            
+            self.main_frame.update_idletasks()
+            self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo cargar:\n{e}")
+    
+    def clear_image(self):
+        self.image_path = None
+        self.preview_label.config(image="", text="")
+        self.placeholder.place(relx=0.5, rely=0.5, anchor="center")
+        self.info_label.config(text="")
+        self.preview_frame.config(bg=self.colors['bg'])
+        self.preview_label.config(bg=self.colors['bg'])
+        
+        for w in self.analysis_frame.winfo_children():
+            w.destroy()
+        self.analysis_frame.pack_forget()
+        
+        self.main_frame.update_idletasks()
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+    
+    def analyze_dataset(self):
+        """Analizar todas las imágenes con los 3 modelos"""
+        if not os.path.exists("data"):
+            messagebox.showerror("Error", "Carpeta 'data' no encontrada.\n\nCrea una carpeta llamada 'data' y coloca allí las imágenes de hojas.")
+            return
+        
+        image_files = [f for f in os.listdir("data") 
+                      if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        
+        if not image_files:
+            messagebox.showwarning("Advertencia", "No se encontraron imágenes en la carpeta 'data'.")
+            return
+        
+        # Deshabilitar botón durante el análisis
+        self.btn_analyze.config(state="disabled", text="🔄 Analizando...")
+        
+        # Mostrar mensaje de progreso
+        self.info_label.config(text=f"🔍 Analizando {len(image_files)} imágenes con 3 modelos...", 
+                              fg=self.colors['primary'])
+        
+        # Ejecutar análisis en hilo separado
+        thread = threading.Thread(target=self.run_analysis)
+        thread.daemon = True
+        thread.start()
+    
+    def run_analysis(self):
+        """Ejecutar análisis con los 3 modelos"""
+        try:
+            # Limpiar resultados anteriores
+            self.root.after(0, self.clear_analysis_frame)
+            
+            # Ejecutar los 3 modelos
+            all_results = {}
+            
+            for model_name, model in self.models.items():
+                print(f"🔍 Ejecutando {model_name}...")
+                results = model.analyze_dataset("data")
+                all_results[model_name] = results
+            
+            # Mostrar resultados en la interfaz
+            self.root.after(0, lambda: self.display_results(all_results))
+            
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror("Error", f"Error en análisis: {e}"))
+        finally:
+            # Rehabilitar botón
+            self.root.after(0, lambda: self.btn_analyze.config(state="normal", text="🔍 Analizar Dataset"))
+    
+    def clear_analysis_frame(self):
+        """Limpiar frame de análisis"""
+        for widget in self.analysis_frame.winfo_children():
+            widget.destroy()
+        self.analysis_frame.pack(fill="both", expand=True, pady=20)
+    
+    def load_reference_image(self, class_num):
+        """Cargar imagen de referencia real para una clase"""
+        # Intentar cargar en diferentes formatos
+        for ext in ['.png', '.jpg', '.jpeg']:
+            reference_path = f"referencias/clase_{class_num}{ext}"
+            try:
+                if os.path.exists(reference_path):
+                    img = Image.open(reference_path)
+                    # Convertir a RGB si es necesario (para PNG con transparencia)
+                    if img.mode in ('RGBA', 'LA', 'P'):
+                        background = Image.new('RGB', img.size, (255, 255, 255))
+                        if img.mode == 'P':
+                            img = img.convert('RGBA')
+                        background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                        img = background
+                    img = img.resize((150, 120), Image.Resampling.LANCZOS)
+                    return img
+            except Exception as e:
+                print(f"Error cargando {reference_path}: {e}")
+                continue
+        
+        # Si no se encontró ninguna imagen, crear placeholder
+        return self.create_placeholder_reference(class_num)
+    
+    def create_placeholder_reference(self, class_num):
+        """Crear placeholder cuando no hay imagen de referencia"""
+        width, height = 150, 120
+        img = Image.new('RGB', (width, height), (240, 240, 240))
+        draw = ImageDraw.Draw(img)
+        
+        # Dibujar borde
+        draw.rectangle([0, 0, width-1, height-1], outline=(200, 200, 200), width=2)
+        
+        # Texto indicando que falta la imagen
+        try:
+            # Intentar usar una fuente
+            font = ImageFont.truetype("arial.ttf", 12)
+        except:
+            font = ImageFont.load_default()
+        
+        text1 = f"Clase {class_num}"
+        text2 = "Sin imagen"
+        text3 = "de referencia"
+        
+        # Calcular posición del texto
+        bbox1 = draw.textbbox((0, 0), text1, font=font)
+        bbox2 = draw.textbbox((0, 0), text2, font=font)
+        bbox3 = draw.textbbox((0, 0), text3, font=font)
+        
+        x1 = (width - (bbox1[2] - bbox1[0])) // 2
+        x2 = (width - (bbox2[2] - bbox2[0])) // 2
+        x3 = (width - (bbox3[2] - bbox3[0])) // 2
+        
+        draw.text((x1, 30), text1, fill=(100, 100, 100), font=font)
+        draw.text((x2, 55), text2, fill=(150, 150, 150), font=font)
+        draw.text((x3, 75), text3, fill=(150, 150, 150), font=font)
+        
+        return img
+    
+    def display_results(self, all_results):
+        """Mostrar resultados de los 3 modelos con referencias visuales"""
+        # Crear pestañas para cada modelo
+        notebook = ttk.Notebook(self.analysis_frame)
+        notebook.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Colores para las clases
+        class_colors = {
+            0: "#10B981",  # Verde - Resistente
+            1: "#84CC16",  # Verde claro - Moderadamente tolerante
+            2: "#F59E0B",  # Amarillo - Ligeramente tolerante  
+            3: "#F97316",  # Naranja - Susceptible
+            4: "#EF4444"   # Rojo - Altamente susceptible
+        }
+        
+        class_names = [
+            "Resistente",
+            "Moderadamente Tolerante",
+            "Ligeramente Tolerante",
+            "Susceptible",
+            "Altamente Susceptible"
+        ]
+        
+        for model_name, results in all_results.items():
+            # Verificar si el modelo está entrenado
+            model_trained = self.models[model_name].is_trained
+            
+            # Frame principal para cada modelo
+            outer_frame = tk.Frame(notebook, bg=self.colors['bg'])
+            notebook.add(outer_frame, text=f"{model_name}")
+            
+            # Canvas con scrollbar para cada pestaña
+            canvas_tab = tk.Canvas(outer_frame, bg=self.colors['bg'], highlightthickness=0)
+            scrollbar_tab = ttk.Scrollbar(outer_frame, orient="vertical", command=canvas_tab.yview)
+            model_frame = tk.Frame(canvas_tab, bg=self.colors['bg'])
+            
+            model_frame.bind(
+                "<Configure>",
+                lambda e, c=canvas_tab: c.configure(scrollregion=c.bbox("all"))
+            )
+            
+            canvas_tab.create_window((0, 0), window=model_frame, anchor="nw")
+            canvas_tab.configure(yscrollcommand=scrollbar_tab.set)
+            
+            canvas_tab.pack(side="left", fill="both", expand=True)
+            scrollbar_tab.pack(side="right", fill="y")
+            
+            # ========== SI EL MODELO NO ESTÁ ENTRENADO ==========
+            if not model_trained:
+                warning_frame = tk.Frame(model_frame, bg=self.colors['card'],
+                                        highlightbackground=self.colors['warning'],
+                                        highlightthickness=3)
+                warning_frame.pack(fill="both", expand=True, padx=20, pady=20)
+                
+                # Icono de advertencia
+                icon_label = tk.Label(
+                    warning_frame,
+                    text="⚠️",
+                    font=(DEFAULT_FONT, 80),
+                    bg=self.colors['card'],
+                    fg=self.colors['warning']
+                )
+                icon_label.pack(pady=(40, 20))
+                
+                # Título
+                title_label = tk.Label(
+                    warning_frame,
+                    text=f"MODELO {model_name} NO ENTRENADO",
+                    font=(DEFAULT_FONT, 20, "bold"),
+                    bg=self.colors['card'],
+                    fg=self.colors['text_dark']
+                )
+                title_label.pack(pady=(0, 15))
+                
+                # Mensaje
+                message = tk.Label(
+                    warning_frame,
+                    text=f"El modelo {model_name} necesita ser entrenado antes de poder realizar predicciones.\n\n"
+                         f"Para entrenar este modelo:\n\n"
+                         f"1. Cierra esta aplicación\n"
+                         f"2. Ejecuta: python etiquetador.py\n"
+                         f"3. Etiqueta al menos 50 imágenes\n"
+                         f"4. Vuelve a abrir esta aplicación\n\n"
+                         f"Una vez entrenado, podrás ver los resultados aquí.",
+                    font=(DEFAULT_FONT, 12),
+                    bg=self.colors['card'],
+                    fg=self.colors['text_medium'],
+                    justify="center"
+                )
+                message.pack(pady=(0, 40), padx=40)
+                
+                # Botón de información
+                info_btn = tk.Button(
+                    warning_frame,
+                    text="📖 Más Información",
+                    font=(DEFAULT_FONT, 12, "bold"),
+                    bg=self.colors['primary'],
+                    fg="white",
+                    padx=30,
+                    pady=12,
+                    cursor="hand2",
+                    relief="flat",
+                    command=lambda: messagebox.showinfo(
+                        f"Información - {model_name}",
+                        f"El modelo {model_name} es un modelo de Machine Learning que requiere entrenamiento previo.\n\n"
+                        f"Características del {model_name}:\n"
+                        f"- Requiere datos etiquetados para aprender\n"
+                        f"- Mínimo 50 imágenes etiquetadas recomendadas\n"
+                        f"- Mayor precisión con más datos\n\n"
+                        f"Usa el script 'etiquetador.py' para etiquetar tus imágenes y entrenar el modelo."
+                    )
+                )
+                info_btn.pack(pady=(0, 40))
+                
+                continue  # Saltar al siguiente modelo
+            
+            # ========== SI EL MODELO ESTÁ ENTRENADO ==========
+            # Título del modelo
+            title_frame = tk.Frame(model_frame, bg=self.colors['card'])
+            title_frame.pack(fill="x", padx=20, pady=(15, 10))
+            
+            title_label = tk.Label(
+                title_frame,
+                text=f"🔬 RESULTADOS DEL MODELO {model_name}",
+                font=(DEFAULT_FONT, 16, "bold"),
+                bg=self.colors['card'],
+                fg=self.colors['text_dark']
+            )
+            title_label.pack(pady=10)
+            
+            # ========== IMAGEN DE REFERENCIA DE LAS 5 CLASES ==========
+            reference_frame = tk.Frame(model_frame, bg=self.colors['card'], 
+                                      highlightbackground=self.colors['primary'],
+                                      highlightthickness=2)
+            reference_frame.pack(fill="x", padx=20, pady=15)
+            
+            ref_title = tk.Label(
+                reference_frame,
+                text=f"🌿 GUÍA VISUAL - 5 CLASES DE CENICILLA",
+                font=(DEFAULT_FONT, 14, "bold"),
+                bg=self.colors['card'],
+                fg=self.colors['primary']
+            )
+            ref_title.pack(pady=(15, 10))
+            
+            ref_subtitle = tk.Label(
+                reference_frame,
+                text="Referencia para identificar el nivel de severidad de la enfermedad",
+                font=(DEFAULT_FONT, 10),
+                bg=self.colors['card'],
+                fg=self.colors['text_medium']
+            )
+            ref_subtitle.pack(pady=(0, 15))
+            
+            # Contenedor de las 5 clases
+            classes_container = tk.Frame(reference_frame, bg=self.colors['card'])
+            classes_container.pack(fill="x", padx=20, pady=10)
+            
+            # Crear tarjetas para cada clase
+            for class_num in range(5):
+                class_frame = tk.Frame(classes_container, 
+                                      bg="white",
+                                      highlightbackground=class_colors[class_num],
+                                      highlightthickness=3)
+                class_frame.pack(side="left", padx=8, pady=10, expand=True)
+                
+                # Número de clase
+                class_number = tk.Label(
+                    class_frame,
+                    text=f"CLASE {class_num}",
+                    font=(DEFAULT_FONT, 11, "bold"),
+                    bg=class_colors[class_num],
+                    fg="white",
+                    padx=10,
+                    pady=5
+                )
+                class_number.pack(fill="x")
+                
+                # Imagen de referencia
+                ref_img = self.load_reference_image(class_num)
+                ref_photo = ImageTk.PhotoImage(ref_img)
+                
+                img_label = tk.Label(class_frame, image=ref_photo, bg="white")
+                img_label.image = ref_photo  # Mantener referencia
+                img_label.pack(pady=10)
+                
+                # Nombre de la clase
+                name_label = tk.Label(
+                    class_frame,
+                    text=class_names[class_num],
+                    font=(DEFAULT_FONT, 9, "bold"),
+                    bg="white",
+                    fg=self.colors['text_dark'],
+                    wraplength=120
+                )
+                name_label.pack(pady=(0, 10))
+            
+            # ========== ESTADÍSTICAS GENERALES ==========
+            stats_frame = tk.Frame(model_frame, bg=self.colors['card'],
+                                  highlightbackground=self.colors['border'],
+                                  highlightthickness=1)
+            stats_frame.pack(fill="x", padx=20, pady=15)
+            
+            stats_title = tk.Label(
+                stats_frame,
+                text="📊 ESTADÍSTICAS DEL ANÁLISIS",
+                font=(DEFAULT_FONT, 13, "bold"),
+                bg=self.colors['card'],
+                fg=self.colors['text_dark']
+            )
+            stats_title.pack(pady=(10, 5))
+            
+            total_images = len(results)
+            class_distribution = {}
+            
+            for result in results:
+                class_num = result['class']
+                class_distribution[class_num] = class_distribution.get(class_num, 0) + 1
+            
+            # Crear grid de estadísticas
+            stats_grid = tk.Frame(stats_frame, bg=self.colors['card'])
+            stats_grid.pack(fill="x", padx=20, pady=15)
+            
+            # Total de imágenes
+            total_frame = tk.Frame(stats_grid, bg=self.colors['card'])
+            total_frame.pack(fill="x", pady=5)
+            
+            tk.Label(
+                total_frame,
+                text=f"📷 Total de imágenes analizadas:",
+                font=(DEFAULT_FONT, 11),
+                bg=self.colors['card'],
+                fg=self.colors['text_medium']
+            ).pack(side="left")
+            
+            tk.Label(
+                total_frame,
+                text=f"{total_images}",
+                font=(DEFAULT_FONT, 11, "bold"),
+                bg=self.colors['card'],
+                fg=self.colors['primary']
+            ).pack(side="left", padx=10)
+            
+            # Separador
+            tk.Frame(stats_grid, bg=self.colors['border'], height=1).pack(fill="x", pady=10)
+            
+            # Distribución por clases
+            dist_label = tk.Label(
+                stats_grid,
+                text="📈 Distribución por clase:",
+                font=(DEFAULT_FONT, 11, "bold"),
+                bg=self.colors['card'],
+                fg=self.colors['text_dark']
+            )
+            dist_label.pack(anchor="w", pady=(5, 10))
+            
+            # Crear barras de progreso para cada clase
+            for class_num in range(5):
+                count = class_distribution.get(class_num, 0)
+                percentage = (count / total_images * 100) if total_images > 0 else 0
+                
+                class_row = tk.Frame(stats_grid, bg=self.colors['card'])
+                class_row.pack(fill="x", pady=5)
+                
+                # Etiqueta de clase
+                class_label = tk.Label(
+                    class_row,
+                    text=f"Clase {class_num} - {class_names[class_num]}:",
+                    font=(DEFAULT_FONT, 10),
+                    bg=self.colors['card'],
+                    fg=self.colors['text_medium'],
+                    width=30,
+                    anchor="w"
+                )
+                class_label.pack(side="left", padx=(0, 10))
+                
+                # Barra de progreso
+                progress_bg = tk.Frame(class_row, bg=self.colors['border'], height=25, width=300)
+                progress_bg.pack(side="left", padx=(0, 10))
+                
+                if percentage > 0:
+                    progress_fill = tk.Frame(
+                        progress_bg,
+                        bg=class_colors[class_num],
+                        height=25,
+                        width=int(300 * percentage / 100)
+                    )
+                    progress_fill.place(x=0, y=0)
+                
+                # Texto de porcentaje
+                percentage_label = tk.Label(
+                    class_row,
+                    text=f"{count} ({percentage:.1f}%)",
+                    font=(DEFAULT_FONT, 10, "bold"),
+                    bg=self.colors['card'],
+                    fg=class_colors[class_num]
+                )
+                percentage_label.pack(side="left")
+            
+            # ========== TABLA DE RESULTADOS DETALLADOS ==========
+            table_frame = tk.Frame(model_frame, bg=self.colors['card'],
+                                  highlightbackground=self.colors['border'],
+                                  highlightthickness=1)
+            table_frame.pack(fill="both", expand=True, padx=20, pady=15)
+            
+            table_title = tk.Label(
+                table_frame,
+                text="📋 RESULTADOS DETALLADOS",
+                font=(DEFAULT_FONT, 13, "bold"),
+                bg=self.colors['card'],
+                fg=self.colors['text_dark']
+            )
+            table_title.pack(pady=(10, 5))
+            
+            # Crear treeview
+            tree_container = tk.Frame(table_frame, bg=self.colors['card'])
+            tree_container.pack(fill="both", expand=True, padx=10, pady=10)
+            
+            tree = ttk.Treeview(
+                tree_container,
+                columns=('Imagen', 'Clase', 'Nivel', 'Confianza', 'Estado'),
+                show='headings',
+                height=15
+            )
+            
+            # Configurar columnas
+            tree.heading('Imagen', text='📷 Imagen')
+            tree.heading('Clase', text='🔢 Clase')
+            tree.heading('Nivel', text='🌿 Nivel de Severidad')
+            tree.heading('Confianza', text='📈 Confianza')
+            tree.heading('Estado', text='⚠️ Estado')
+            
+            tree.column('Imagen', width=200, anchor="w")
+            tree.column('Clase', width=80, anchor="center")
+            tree.column('Nivel', width=250, anchor="w")
+            tree.column('Confianza', width=120, anchor="center")
+            tree.column('Estado', width=150, anchor="center")
+            
+            # Scrollbar para la tabla
+            tree_scrollbar = ttk.Scrollbar(tree_container, orient="vertical", command=tree.yview)
+            tree.configure(yscrollcommand=tree_scrollbar.set)
+            tree_scrollbar.pack(side="right", fill="y")
+            tree.pack(side="left", fill="both", expand=True)
+            
+            # Insertar datos con colores
+            for idx, result in enumerate(results):
+                class_num = result['class']
+                confidence = result['confidence']
+                
+                # Determinar estado según confianza
+                if confidence > 0.8:
+                    estado = "✅ Alta"
+                elif confidence > 0.6:
+                    estado = "⚠️ Media"
+                else:
+                    estado = "❌ Baja"
+                
+                # Insertar fila
+                item_id = tree.insert('', 'end', values=(
+                    result['image_name'],
+                    f"Clase {class_num}",
+                    class_names[class_num],
+                    f"{confidence:.2%}",
+                    estado
+                ))
+                
+                # Aplicar color de fondo según la clase
+                if idx % 2 == 0:
+                    tree.item(item_id, tags=('evenrow',))
+                else:
+                    tree.item(item_id, tags=('oddrow',))
+            
+            # Configurar colores de las filas
+            tree.tag_configure('evenrow', background='#F8FAFF')
+            tree.tag_configure('oddrow', background='#FFFFFF')
+            
+            # ========== RESUMEN DE CONFIANZA ==========
+            confidence_frame = tk.Frame(model_frame, bg=self.colors['card'],
+                                       highlightbackground=self.colors['success'],
+                                       highlightthickness=2)
+            confidence_frame.pack(fill="x", padx=20, pady=15)
+            
+            conf_title = tk.Label(
+                confidence_frame,
+                text="💯 ANÁLISIS DE CONFIANZA",
+                font=(DEFAULT_FONT, 13, "bold"),
+                bg=self.colors['card'],
+                fg=self.colors['text_dark']
+            )
+            conf_title.pack(pady=(10, 5))
+            
+            # Calcular estadísticas de confianza
+            confidences = [r['confidence'] for r in results]
+            avg_confidence = np.mean(confidences) if confidences else 0
+            max_confidence = np.max(confidences) if confidences else 0
+            min_confidence = np.min(confidences) if confidences else 0
+            
+            conf_grid = tk.Frame(confidence_frame, bg=self.colors['card'])
+            conf_grid.pack(fill="x", padx=20, pady=15)
+            
+            # Métricas de confianza
+            metrics = [
+                ("📊 Confianza Promedio", f"{avg_confidence:.2%}", self.colors['primary']),
+                ("🔝 Confianza Máxima", f"{max_confidence:.2%}", self.colors['success']),
+                ("📉 Confianza Mínima", f"{min_confidence:.2%}", self.colors['warning'])
+            ]
+            
+            for label_text, value_text, color in metrics:
+                metric_frame = tk.Frame(conf_grid, bg=self.colors['card'])
+                metric_frame.pack(side="left", expand=True, padx=10)
+                
+                tk.Label(
+                    metric_frame,
+                    text=label_text,
+                    font=(DEFAULT_FONT, 10),
+                    bg=self.colors['card'],
+                    fg=self.colors['text_medium']
+                ).pack()
+                
+                tk.Label(
+                    metric_frame,
+                    text=value_text,
+                    font=(DEFAULT_FONT, 18, "bold"),
+                    bg=self.colors['card'],
+                    fg=color
+                ).pack(pady=5)
+        
+        # ========== COMPARATIVA ENTRE MODELOS ==========
+        self.create_comparison_chart(all_results)
+        
+        # Actualizar info label
+        total_images = len(next(iter(all_results.values())))
+        self.info_label.config(
+            text=f"✅ Análisis completado: {total_images} imágenes procesadas con 3 modelos", 
+            fg=self.colors['success'],
+            font=(DEFAULT_FONT, 12, "bold")
+        )
+        
+        # Actualizar scroll
+        self.main_frame.update_idletasks()
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self.canvas.yview_moveto(1.0)
+    
+    def create_comparison_chart(self, all_results):
+        """Crear gráfica comparativa entre modelos"""
+        comparison_frame = tk.Frame(self.analysis_frame, bg=self.colors['card'],
+                                   highlightbackground=self.colors['accent'],
+                                   highlightthickness=3)
+        comparison_frame.pack(fill="x", padx=20, pady=20)
+        
+        title = tk.Label(
+            comparison_frame,
+            text="🔄 COMPARATIVA ENTRE MODELOS",
+            font=(DEFAULT_FONT, 16, "bold"),
+            bg=self.colors['card'],
+            fg=self.colors['text_dark']
+        )
+        title.pack(pady=(15, 10))
+        
+        subtitle = tk.Label(
+            comparison_frame,
+            text="Análisis comparativo del rendimiento de los 3 modelos de IA",
+            font=(DEFAULT_FONT, 11),
+            bg=self.colors['card'],
+            fg=self.colors['text_medium']
+        )
+        subtitle.pack(pady=(0, 15))
+        
+        # Separador
+        tk.Frame(comparison_frame, bg=self.colors['border'], height=2).pack(fill="x", padx=20, pady=10)
+        
+        # Verificar cuántos modelos están entrenados
+        trained_models = {name: results for name, results in all_results.items() 
+                         if self.models[name].is_trained and results and len(results) > 0 
+                         and results[0].get('class', -1) >= 0}
+        
+        if not trained_models:
+            # Ningún modelo entrenado
+            warning_label = tk.Label(
+                comparison_frame,
+                text="⚠️ No hay modelos entrenados para comparar\n\n"
+                     "Entrena al menos un modelo usando 'etiquetador.py' para ver comparativas",
+                font=(DEFAULT_FONT, 12, "bold"),
+                bg=self.colors['card'],
+                fg=self.colors['warning'],
+                justify="center"
+            )
+            warning_label.pack(pady=30)
+            return
+        
+        # Grid de comparación
+        comparison_grid = tk.Frame(comparison_frame, bg=self.colors['card'])
+        comparison_grid.pack(fill="x", padx=30, pady=15)
+        
+        # Encabezados
+        headers = ["Modelo", "Estado", "Conf. Promedio", "Clase Dominante", "Total Imágenes"]
+        for col, header in enumerate(headers):
+            tk.Label(
+                comparison_grid,
+                text=header,
+                font=(DEFAULT_FONT, 11, "bold"),
+                bg=self.colors['accent_light'],
+                fg=self.colors['text_dark'],
+                padx=15,
+                pady=10
+            ).grid(row=0, column=col, sticky="ew", padx=2, pady=2)
+        
+        # Colores de modelo
+        model_colors = {
+            'SVM': self.colors['primary'],
+            'CNN': self.colors['accent'],
+            'Transformer': self.colors['warning']
+        }
+        
+        class_names = [
+            "Resistente",
+            "Moderadamente Tolerante",
+            "Ligeramente Tolerante",
+            "Susceptible",
+            "Altamente Susceptible"
+        ]
+        
+        # Datos de cada modelo
+        row = 1
+        for model_name, results in all_results.items():
+            is_trained = self.models[model_name].is_trained
+            
+            if is_trained and results and len(results) > 0 and results[0].get('class', -1) >= 0:
+                # Modelo entrenado con resultados válidos
+                confidences = [r['confidence'] for r in results if 'confidence' in r and r['confidence'] > 0]
+                avg_confidence = np.mean(confidences) if confidences else 0
+                
+                # Distribución de clases
+                class_counts = {}
+                for result in results:
+                    class_num = result.get('class', -1)
+                    if class_num >= 0:
+                        class_counts[class_num] = class_counts.get(class_num, 0) + 1
+                
+                # Clase más frecuente
+                if class_counts:
+                    most_common_class = max(class_counts.items(), key=lambda x: x[1])
+                    dominant_class = f"Clase {most_common_class[0]} ({class_names[most_common_class[0]]})"
+                else:
+                    dominant_class = "N/A"
+                
+                estado = "✅ Activo"
+                estado_color = self.colors['success']
+                total_images = f"{len(results)} imágenes"
+                conf_text = f"{avg_confidence:.2%}"
+            else:
+                # Modelo no entrenado
+                estado = "❌ No entrenado"
+                estado_color = self.colors['danger']
+                conf_text = "N/A"
+                dominant_class = "N/A"
+                total_images = "N/A"
+            
+            # Fila de modelo
+            data = [
+                (f"🤖 {model_name}", model_colors[model_name], "white"),
+                (estado, self.colors['card'], estado_color),
+                (conf_text, self.colors['card'], self.colors['text_dark']),
+                (dominant_class, self.colors['card'], self.colors['text_dark']),
+                (total_images, self.colors['card'], self.colors['text_dark'])
+            ]
+            
+            for col, (value, bg_color, fg_color) in enumerate(data):
+                tk.Label(
+                    comparison_grid,
+                    text=value,
+                    font=(DEFAULT_FONT, 10, "bold" if col == 0 else "normal"),
+                    bg=bg_color,
+                    fg=fg_color,
+                    padx=15,
+                    pady=12
+                ).grid(row=row, column=col, sticky="ew", padx=2, pady=2)
+            
+            row += 1
+        
+        # Configurar expansión de columnas
+        for col in range(len(headers)):
+            comparison_grid.columnconfigure(col, weight=1)
+        
+        # Separador final
+        tk.Frame(comparison_frame, bg=self.colors['border'], height=2).pack(fill="x", padx=20, pady=15)
+        
+        # Recomendación final
+        recommendation_frame = tk.Frame(comparison_frame, bg=self.colors['accent_light'])
+        recommendation_frame.pack(fill="x", padx=20, pady=15)
+        
+        if len(trained_models) == 3:
+            recommendation_text = "💡 RECOMENDACIÓN: Compara los resultados de los 3 modelos para obtener una evaluación más robusta.\n"
+            recommendation_text += "Cada modelo utiliza técnicas diferentes de análisis y puede identificar patrones únicos en las hojas."
+        elif len(trained_models) > 0:
+            untrained_count = 3 - len(trained_models)
+            recommendation_text = f"💡 RECOMENDACIÓN: Tienes {len(trained_models)} modelo(s) entrenado(s).\n"
+            recommendation_text += f"Entrena los {untrained_count} modelo(s) restante(s) para obtener una evaluación más completa."
+        else:
+            recommendation_text = "💡 RECOMENDACIÓN: Entrena al menos un modelo usando 'etiquetador.py' para comenzar a analizar imágenes."
+        
+        recommendation_label = tk.Label(
+            recommendation_frame,
+            text=recommendation_text,
+            font=(DEFAULT_FONT, 11),
+            bg=self.colors['accent_light'],
+            fg=self.colors['text_dark'],
+            wraplength=1000,
+            justify="center"
+        )
+        recommendation_label.pack(pady=15)
+        
+        # Botón para exportar resultados (solo si hay resultados)
+        if trained_models:
+            export_btn = tk.Button(
+                comparison_frame,
+                text="📥 Exportar Resultados",
+                font=(DEFAULT_FONT, 12, "bold"),
+                bg=self.colors['success'],
+                fg="white",
+                padx=30,
+                pady=12,
+                cursor="hand2",
+                relief="flat",
+                command=lambda: self.export_results(all_results)
+            )
+            export_btn.pack(pady=15)
+            self.add_hover(export_btn, self.colors['success'], self.colors['success_hover'])
+    
+    def export_results(self, all_results):
+        """Exportar resultados a un archivo de texto"""
+        try:
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".txt",
+                filetypes=[("Archivo de texto", "*.txt"), ("Todos los archivos", "*.*")]
+            )
+            
+            if filename:
+                with open(filename, 'w', encoding='utf-8') as f:
+                    f.write("=" * 80 + "\n")
+                    f.write("RESULTADOS DEL ANÁLISIS DE CENICILLA EN HOJAS\n")
+                    f.write("=" * 80 + "\n\n")
+                    
+                    for model_name, results in all_results.items():
+                        f.write(f"\n{'=' * 80}\n")
+                        f.write(f"MODELO: {model_name}\n")
+                        f.write(f"{'=' * 80}\n\n")
+                        
+                        for result in results:
+                            f.write(f"Imagen: {result['image_name']}\n")
+                            f.write(f"  - Clase: {result['class']}\n")
+                            f.write(f"  - Severidad: {result['class_name']}\n")
+                            f.write(f"  - Confianza: {result['confidence']:.2%}\n\n")
+                
+                messagebox.showinfo("Éxito", f"Resultados exportados correctamente a:\n{filename}")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo exportar los resultados:\n{e}")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = ScrollableImageApp(root)
+    root.mainloop()

@@ -1,0 +1,21 @@
+{
+  "n_samples": 500,
+  "n_train": 400,
+  "n_val": 100,
+  "train_accuracy": 0.28999999165534973,
+  "val_accuracy": 0.28999999165534973,
+  "train_loss": 1.6845800876617432,
+  "val_loss": 1.687229037284851,
+  "epochs_trained": 11,
+  "img_size": [
+    150,
+    150
+  ],
+  "classes": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ]
+}

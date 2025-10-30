@@ -1,0 +1,36 @@
+{
+  "model_type": "Vision Transformer (ViT)",
+  "training_date": "2025-10-30T03:59:21",
+  "n_samples": 500,
+  "n_train": 400,
+  "n_val": 100,
+  "train_accuracy": 0.3474999964237213,
+  "val_accuracy": 0.3499999940395355,
+  "train_loss": 1.3395942449569702,
+  "val_loss": 1.3140164613723755,
+  "epochs_trained": 66,
+  "final_epoch": 66,
+  "img_size": [
+    128,
+    128
+  ],
+  "patch_size": 16,
+  "num_patches": 64,
+  "projection_dim": 64,
+  "num_heads": 4,
+  "transformer_layers": 4,
+  "class_distribution": {
+    "0": 3,
+    "1": 49,
+    "2": 129,
+    "3": 174,
+    "4": 145
+  },
+  "classes": {
+    "0": "Clase 0 - Resistente",
+    "1": "Clase 1 - Moderadamente tolerante",
+    "2": "Clase 2 - Ligeramente tolerante",
+    "3": "Clase 3 - Susceptible",
+    "4": "Clase 4 - Altamente susceptible"
+  }
+}
