@@ -1,15 +1,15 @@
 {
   "model_type": "Vision Transformer (ViT)",
-  "training_date": "2025-10-30T03:59:21",
+  "training_date": "2025-10-30T15:08:54",
   "n_samples": 500,
   "n_train": 400,
   "n_val": 100,
   "train_accuracy": 0.3474999964237213,
   "val_accuracy": 0.3499999940395355,
-  "train_loss": 1.3395942449569702,
-  "val_loss": 1.3140164613723755,
-  "epochs_trained": 66,
-  "final_epoch": 66,
+  "train_loss": 1.33930242061615,
+  "val_loss": 1.3136961460113525,
+  "epochs_trained": 55,
+  "final_epoch": 55,
   "img_size": [
     128,
     128

@@ -8,6 +8,7 @@ import threading
 from modelos.svm_model import SVMModel
 from modelos.cnn_model import CNNModel
 from modelos.transformer_model import TransformerModel
+from evaluador_metricas import MetricsEvaluator
 
 # Helper: detectar sistema para tipografías
 DEFAULT_FONT = "Segoe UI" if platform.system() == "Windows" else "Helvetica"
@@ -42,6 +43,7 @@ class ScrollableImageApp:
         self.image_path = None
         self.models = {}
         self.analysis_in_progress = False
+        self.evaluator = MetricsEvaluator()  # Inicializar evaluador de métricas
         
         # Inicializar modelos
         self.init_models()
@@ -55,18 +57,32 @@ class ScrollableImageApp:
             print("="*60)
             
             self.models['SVM'] = SVMModel()
+            print(f"   SVM: {'✅ Entrenado' if hasattr(self.models['SVM'], 'is_trained') and self.models['SVM'].is_trained else '❌ No entrenado'}")
+            
             self.models['CNN'] = CNNModel()
+            print(f"   CNN: {'✅ Entrenado' if hasattr(self.models['CNN'], 'is_trained') and self.models['CNN'].is_trained else '❌ No entrenado'}")
+            
             self.models['Transformer'] = TransformerModel()
             
-            # Verificar estado de cada modelo
-            models_status = []
-            for name, model in self.models.items():
-                status = "✅ Entrenado" if model.is_trained else "❌ No entrenado"
-                models_status.append(f"{name}: {status}")
-                print(f"   {name}: {status}")
+            # Debug Transformer
+            transformer_trained = hasattr(self.models['Transformer'], 'is_trained') and self.models['Transformer'].is_trained
+            transformer_has_model = hasattr(self.models['Transformer'], 'model') and self.models['Transformer'].model is not None
+            
+            print(f"   Transformer: {'✅ Entrenado' if transformer_trained else '❌ No entrenado'}")
+            print(f"      - is_trained: {transformer_trained}")
+            print(f"      - model exists: {transformer_has_model}")
+            
+            # Verificar archivo del modelo
+            if os.path.exists("modelos/transformer_model.h5"):
+                print(f"      - Archivo modelo: ✅ Existe")
+            else:
+                print(f"      - Archivo modelo: ❌ No existe")
             
             # Verificar si algún modelo no está entrenado
-            untrained = [name for name, model in self.models.items() if not model.is_trained]
+            untrained = []
+            for name, model in self.models.items():
+                if not (hasattr(model, 'is_trained') and model.is_trained):
+                    untrained.append(name)
             
             if untrained:
                 print(f"\n⚠️ ADVERTENCIA: Los siguientes modelos NO están entrenados:")
@@ -82,6 +98,9 @@ class ScrollableImageApp:
             print("="*60 + "\n")
             
         except Exception as e:
+            import traceback
+            print(f"❌ Error inicializando modelos: {e}")
+            traceback.print_exc()
             messagebox.showerror("Error", f"Error inicializando modelos: {e}")
     
     def create_widgets(self):
@@ -703,6 +722,44 @@ class ScrollableImageApp:
             
             messagebox.showinfo("Éxito", "Imagen de referencia eliminada")
     
+    def reload_model(self, model_name):
+        """Recargar un modelo específico"""
+        try:
+            print(f"\n🔄 Recargando modelo {model_name}...")
+            
+            if model_name == 'SVM':
+                self.models['SVM'] = SVMModel()
+            elif model_name == 'CNN':
+                self.models['CNN'] = CNNModel()
+            elif model_name == 'Transformer':
+                self.models['Transformer'] = TransformerModel()
+            
+            # Verificar si se cargó correctamente
+            model = self.models[model_name]
+            is_trained = hasattr(model, 'is_trained') and model.is_trained
+            
+            if is_trained:
+                messagebox.showinfo(
+                    "Éxito",
+                    f"Modelo {model_name} recargado exitosamente.\n\n"
+                    f"Haz clic en 'Analizar Dataset' para ver los nuevos resultados."
+                )
+                print(f"✅ Modelo {model_name} recargado correctamente")
+            else:
+                messagebox.showwarning(
+                    "Advertencia",
+                    f"El modelo {model_name} se recargó pero sigue sin estar entrenado.\n\n"
+                    f"Verifica que:\n"
+                    f"1. Hayas ejecutado 'etiquetador.py'\n"
+                    f"2. Hayas etiquetado suficientes imágenes\n"
+                    f"3. El archivo del modelo exista en la carpeta 'modelos/'"
+                )
+                print(f"⚠️ Modelo {model_name} recargado pero no entrenado")
+                
+        except Exception as e:
+            messagebox.showerror("Error", f"Error recargando modelo {model_name}:\n{e}")
+            print(f"❌ Error recargando {model_name}: {e}")
+    
     def add_hover(self, widget, normal, hover):
         widget.bind("<Enter>", lambda e: widget.config(bg=hover))
         widget.bind("<Leave>", lambda e: widget.config(bg=normal))
@@ -937,6 +994,11 @@ class ScrollableImageApp:
             
             # ========== SI EL MODELO NO ESTÁ ENTRENADO ==========
             if not model_trained:
+                # Debug: Imprimir información del modelo
+                print(f"\n🔍 DEBUG {model_name}:")
+                print(f"   - is_trained: {self.models[model_name].is_trained}")
+                print(f"   - has model: {self.models[model_name].model is not None}")
+                
                 warning_frame = tk.Frame(model_frame, bg=self.colors['card'],
                                         highlightbackground=self.colors['warning'],
                                         highlightthickness=3)
@@ -980,8 +1042,11 @@ class ScrollableImageApp:
                 message.pack(pady=(0, 40), padx=40)
                 
                 # Botón de información
+                btn_container_warning = tk.Frame(warning_frame, bg=self.colors['card'])
+                btn_container_warning.pack(pady=(0, 40))
+                
                 info_btn = tk.Button(
-                    warning_frame,
+                    btn_container_warning,
                     text="📖 Más Información",
                     font=(DEFAULT_FONT, 12, "bold"),
                     bg=self.colors['primary'],
@@ -1000,7 +1065,22 @@ class ScrollableImageApp:
                         f"Usa el script 'etiquetador.py' para etiquetar tus imágenes y entrenar el modelo."
                     )
                 )
-                info_btn.pack(pady=(0, 40))
+                info_btn.pack(side="left", padx=5)
+                
+                # Botón para recargar modelo
+                reload_btn = tk.Button(
+                    btn_container_warning,
+                    text="🔄 Recargar Modelo",
+                    font=(DEFAULT_FONT, 12, "bold"),
+                    bg=self.colors['success'],
+                    fg="white",
+                    padx=30,
+                    pady=12,
+                    cursor="hand2",
+                    relief="flat",
+                    command=lambda mn=model_name: self.reload_model(mn)
+                )
+                reload_btn.pack(side="left", padx=5)
                 
                 continue  # Saltar al siguiente modelo
             
@@ -1186,6 +1266,232 @@ class ScrollableImageApp:
                     fg=class_colors[class_num]
                 )
                 percentage_label.pack(side="left")
+            
+            # ========== MÉTRICAS DE EVALUACIÓN ==========
+            metrics_section = tk.Frame(model_frame, bg=self.colors['card'],
+                                      highlightbackground=self.colors['accent'],
+                                      highlightthickness=2)
+            metrics_section.pack(fill="x", padx=20, pady=15)
+            
+            metrics_title = tk.Label(
+                metrics_section,
+                text="📊 MÉTRICAS DE EVALUACIÓN DEL MODELO",
+                font=(DEFAULT_FONT, 13, "bold"),
+                bg=self.colors['card'],
+                fg=self.colors['text_dark']
+            )
+            metrics_title.pack(pady=(10, 5))
+            
+            # Calcular métricas
+            model_metrics = self.evaluator.calculate_metrics(results, model_name)
+            
+            if 'error' in model_metrics:
+                # Mostrar error si no hay métricas disponibles
+                error_label = tk.Label(
+                    metrics_section,
+                    text=f"⚠️ {model_metrics['error']}\n{model_metrics.get('message', '')}",
+                    font=(DEFAULT_FONT, 11),
+                    bg=self.colors['card'],
+                    fg=self.colors['warning'],
+                    justify="center"
+                )
+                error_label.pack(pady=15)
+            else:
+                # Mostrar métricas principales en cards
+                metrics_grid = tk.Frame(metrics_section, bg=self.colors['card'])
+                metrics_grid.pack(fill="x", padx=20, pady=15)
+                
+                # Métricas principales
+                main_metrics = [
+                    ("🎯 Exactitud", model_metrics['accuracy'], self.colors['primary']),
+                    ("🔍 Precisión", model_metrics['precision_weighted'], self.colors['success']),
+                    ("📈 Recall", model_metrics['recall_weighted'], self.colors['accent']),
+                    ("⭐ F1-Score", model_metrics['f1_weighted'], self.colors['warning'])
+                ]
+                
+                for metric_label, metric_value, metric_color in main_metrics:
+                    metric_card = tk.Frame(metrics_grid, bg=self.colors['bg'],
+                                          highlightbackground=metric_color,
+                                          highlightthickness=2)
+                    metric_card.pack(side="left", expand=True, padx=5, pady=5)
+                    
+                    tk.Label(
+                        metric_card,
+                        text=metric_label,
+                        font=(DEFAULT_FONT, 10),
+                        bg=self.colors['bg'],
+                        fg=self.colors['text_medium']
+                    ).pack(pady=(10, 5))
+                    
+                    tk.Label(
+                        metric_card,
+                        text=f"{metric_value:.2%}",
+                        font=(DEFAULT_FONT, 20, "bold"),
+                        bg=self.colors['bg'],
+                        fg=metric_color
+                    ).pack(pady=(0, 10), padx=20)
+                
+                # Métricas por clase (collapsible)
+                per_class_frame = tk.Frame(metrics_section, bg=self.colors['bg'])
+                per_class_frame.pack(fill="x", padx=20, pady=10)
+                
+                per_class_title = tk.Label(
+                    per_class_frame,
+                    text="📋 Métricas Detalladas por Clase",
+                    font=(DEFAULT_FONT, 11, "bold"),
+                    bg=self.colors['bg'],
+                    fg=self.colors['text_dark']
+                )
+                per_class_title.pack(anchor="w", pady=(5, 10))
+                
+                # Tabla de métricas por clase
+                class_metrics_table = tk.Frame(per_class_frame, bg=self.colors['card'])
+                class_metrics_table.pack(fill="x")
+                
+                # Encabezados
+                headers = ["Clase", "Precisión", "Recall", "F1-Score", "Soporte"]
+                header_row = tk.Frame(class_metrics_table, bg=self.colors['accent_light'])
+                header_row.pack(fill="x", pady=2)
+                
+                for i, header in enumerate(headers):
+                    width = 30 if i == 0 else 15
+                    tk.Label(
+                        header_row,
+                        text=header,
+                        font=(DEFAULT_FONT, 10, "bold"),
+                        bg=self.colors['accent_light'],
+                        fg=self.colors['text_dark'],
+                        width=width,
+                        anchor="w" if i == 0 else "center"
+                    ).pack(side="left", padx=5, pady=5)
+                
+                # Datos por clase
+                for class_id, class_data in sorted(model_metrics['per_class'].items()):
+                    data_row = tk.Frame(class_metrics_table, bg=self.colors['card'])
+                    data_row.pack(fill="x", pady=1)
+                    
+                    # Nombre de clase
+                    tk.Label(
+                        data_row,
+                        text=class_data['class_name'],
+                        font=(DEFAULT_FONT, 9),
+                        bg=self.colors['card'],
+                        fg=self.colors['text_dark'],
+                        width=30,
+                        anchor="w"
+                    ).pack(side="left", padx=5, pady=3)
+                    
+                    # Métricas
+                    for metric in ['precision', 'recall', 'f1_score']:
+                        value = class_data[metric]
+                        color = self.colors['success'] if value > 0.8 else (
+                            self.colors['warning'] if value > 0.6 else self.colors['danger']
+                        )
+                        tk.Label(
+                            data_row,
+                            text=f"{value:.2%}",
+                            font=(DEFAULT_FONT, 9, "bold"),
+                            bg=self.colors['card'],
+                            fg=color,
+                            width=15
+                        ).pack(side="left", padx=5, pady=3)
+                    
+                    # Soporte
+                    tk.Label(
+                        data_row,
+                        text=f"{class_data['support']}",
+                        font=(DEFAULT_FONT, 9),
+                        bg=self.colors['card'],
+                        fg=self.colors['text_medium'],
+                        width=15
+                    ).pack(side="left", padx=5, pady=3)
+                
+                # Matriz de confusión
+                cm_frame = tk.Frame(metrics_section, bg=self.colors['bg'])
+                cm_frame.pack(fill="x", padx=20, pady=10)
+                
+                cm_title = tk.Label(
+                    cm_frame,
+                    text="🔍 Matriz de Confusión",
+                    font=(DEFAULT_FONT, 11, "bold"),
+                    bg=self.colors['bg'],
+                    fg=self.colors['text_dark']
+                )
+                cm_title.pack(anchor="w", pady=(5, 10))
+                
+                cm_container = tk.Frame(cm_frame, bg=self.colors['card'])
+                cm_container.pack(fill="x")
+                
+                cm = np.array(model_metrics['confusion_matrix'])
+                n_classes = len(cm)
+                
+                # Crear grid para matriz de confusión
+                cm_grid = tk.Frame(cm_container, bg=self.colors['card'])
+                cm_grid.pack(pady=10, padx=10)
+                
+                # Encabezado superior (Predicho)
+                tk.Label(
+                    cm_grid,
+                    text="Predicho →",
+                    font=(DEFAULT_FONT, 9, "bold"),
+                    bg=self.colors['card'],
+                    fg=self.colors['text_medium']
+                ).grid(row=0, column=0, padx=5, pady=5, sticky="e")
+                
+                for i in range(n_classes):
+                    tk.Label(
+                        cm_grid,
+                        text=f"C{i}",
+                        font=(DEFAULT_FONT, 9, "bold"),
+                        bg=self.colors['accent_light'],
+                        fg=self.colors['text_dark'],
+                        width=6,
+                        height=2
+                    ).grid(row=0, column=i+1, padx=2, pady=2)
+                
+                # Encabezado lateral (Real)
+                tk.Label(
+                    cm_grid,
+                    text="Real\n↓",
+                    font=(DEFAULT_FONT, 9, "bold"),
+                    bg=self.colors['card'],
+                    fg=self.colors['text_medium']
+                ).grid(row=1, column=0, rowspan=n_classes, padx=5, pady=5, sticky="n")
+                
+                # Valores de la matriz
+                for i in range(n_classes):
+                    # Label de fila
+                    tk.Label(
+                        cm_grid,
+                        text=f"C{i}",
+                        font=(DEFAULT_FONT, 9, "bold"),
+                        bg=self.colors['accent_light'],
+                        fg=self.colors['text_dark'],
+                        width=6,
+                        height=2
+                    ).grid(row=i+1, column=0, padx=2, pady=2, sticky="w")
+                    
+                    for j in range(n_classes):
+                        value = cm[i][j]
+                        # Color según si es diagonal (correcto) o no
+                        if i == j:
+                            bg_color = self.colors['success'] if value > 0 else self.colors['bg']
+                            fg_color = "white" if value > 0 else self.colors['text_medium']
+                        else:
+                            bg_color = self.colors['danger'] if value > 0 else self.colors['bg']
+                            fg_color = "white" if value > 0 else self.colors['text_medium']
+                        
+                        tk.Label(
+                            cm_grid,
+                            text=str(value),
+                            font=(DEFAULT_FONT, 10, "bold" if value > 0 else "normal"),
+                            bg=bg_color,
+                            fg=fg_color,
+                            width=6,
+                            height=2,
+                            relief="solid",
+                            borderwidth=1
+                        ).grid(row=i+1, column=j+1, padx=2, pady=2)
             
             # ========== TABLA DE RESULTADOS DETALLADOS ==========
             table_frame = tk.Frame(model_frame, bg=self.colors['card'],
