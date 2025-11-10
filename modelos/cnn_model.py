@@ -13,11 +13,11 @@ class CNNModel:
         self.model = None
         self.img_size = (150, 150)
         self.class_names = {
-            0: "Clase 0 - Resistente",
-            1: "Clase 1 - Moderadamente tolerante", 
-            2: "Clase 2 - Ligeramente tolerante",
-            3: "Clase 3 - Susceptible",
-            4: "Clase 4 - Altamente susceptible"
+            0: "Clase 1 - Resistente",
+            1: "Clase 2 - Moderadamente tolerante", 
+            2: "Clase 3 - Ligeramente tolerante",
+            3: "Clase 4 - Susceptible",
+            4: "Clase 5 - Altamente susceptible"
         }
         self.is_trained = False
         self.load_or_create_model()
