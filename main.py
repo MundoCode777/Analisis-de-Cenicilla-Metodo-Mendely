@@ -389,7 +389,7 @@ class ScrollableImageApp:
         line.pack(fill="x", pady=(0, 15))
         
         footer_text = tk.Label(footer, 
-                              text="© 2024 Analizador de Cenicilla  •  Powered by Multi-Model AI Technology",
+                              text="© 2025 Analizador de Cenicilla  •  Powered by Multi-Model AI Technology",
                               font=(DEFAULT_FONT, 11),
                               bg=self.colors['bg'],
                               fg=self.colors['text_light'])
