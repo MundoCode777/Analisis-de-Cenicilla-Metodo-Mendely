@@ -478,17 +478,17 @@ class ScrollableImageApp:
         ]
         
         class_colors = {
-            0: "#10B981",
-            1: "#84CC16",
-            2: "#F59E0B",
-            3: "#F97316",
-            4: "#EF4444"
+            1: "#10B981",
+            2: "#84CC16",
+            3: "#F59E0B",
+            4: "#F97316",
+            5: "#EF4444"
         }
         
         # Crear tarjeta para cada clase
         self.reference_labels = {}
         
-        for class_num in range(5):
+        for class_num in range(1, 6):  # Cambiado de range(5) a range(1, 6)
             # Frame de la clase
             class_card = tk.Frame(
                 classes_frame,
@@ -504,7 +504,7 @@ class ScrollableImageApp:
             
             tk.Label(
                 header,
-                text=f"CLASE {class_num} - {class_names[class_num]}",
+                text=f"CLASE {class_num} - {class_names[class_num-1]}",  # Ajustado índice
                 font=(DEFAULT_FONT, 13, "bold"),
                 bg=class_colors[class_num],
                 fg="white"
@@ -558,7 +558,7 @@ class ScrollableImageApp:
             status_label.pack(anchor="w", pady=(0, 10))
             
             # Descripción
-            desc_text = f"Esta clase representa: {class_names[class_num].upper()}"
+            desc_text = f"Esta clase representa: {class_names[class_num-1].upper()}"  # Ajustado índice
             tk.Label(
                 info_frame,
                 text=desc_text,
@@ -953,11 +953,11 @@ class ScrollableImageApp:
         
         # Colores para las clases
         class_colors = {
-            0: "#10B981",  # Verde - Resistente
-            1: "#84CC16",  # Verde claro - Moderadamente tolerante
-            2: "#F59E0B",  # Amarillo - Ligeramente tolerante  
-            3: "#F97316",  # Naranja - Susceptible
-            4: "#EF4444"   # Rojo - Altamente susceptible
+            1: "#10B981",  # Verde - Resistente
+            2: "#84CC16",  # Verde claro - Moderadamente tolerante
+            3: "#F59E0B",  # Amarillo - Ligeramente tolerante  
+            4: "#F97316",  # Naranja - Susceptible
+            5: "#EF4444"   # Rojo - Altamente susceptible
         }
         
         class_names = [
@@ -1127,7 +1127,7 @@ class ScrollableImageApp:
             classes_container.pack(fill="x", padx=20, pady=10)
             
             # Crear tarjetas para cada clase
-            for class_num in range(5):
+            for class_num in range(1, 6):  # Cambiado de range(5) a range(1, 6)
                 class_frame = tk.Frame(classes_container, 
                                       bg="white",
                                       highlightbackground=class_colors[class_num],
@@ -1157,7 +1157,7 @@ class ScrollableImageApp:
                 # Nombre de la clase
                 name_label = tk.Label(
                     class_frame,
-                    text=class_names[class_num],
+                    text=class_names[class_num-1],  # Ajustado índice
                     font=(DEFAULT_FONT, 9, "bold"),
                     bg="white",
                     fg=self.colors['text_dark'],
@@ -1225,7 +1225,7 @@ class ScrollableImageApp:
             dist_label.pack(anchor="w", pady=(5, 10))
             
             # Crear barras de progreso para cada clase
-            for class_num in range(5):
+            for class_num in range(1, 6):  # Cambiado de range(5) a range(1, 6)
                 count = class_distribution.get(class_num, 0)
                 percentage = (count / total_images * 100) if total_images > 0 else 0
                 
@@ -1235,7 +1235,7 @@ class ScrollableImageApp:
                 # Etiqueta de clase
                 class_label = tk.Label(
                     class_row,
-                    text=f"Clase {class_num} - {class_names[class_num]}:",
+                    text=f"Clase {class_num} - {class_names[class_num-1]}:",  # Ajustado índice
                     font=(DEFAULT_FONT, 10),
                     bg=self.colors['card'],
                     fg=self.colors['text_medium'],
@@ -1441,7 +1441,7 @@ class ScrollableImageApp:
                 for i in range(n_classes):
                     tk.Label(
                         cm_grid,
-                        text=f"C{i}",
+                        text=f"C{i+1}",  # Cambiado de f"C{i}" a f"C{i+1}"
                         font=(DEFAULT_FONT, 9, "bold"),
                         bg=self.colors['accent_light'],
                         fg=self.colors['text_dark'],
@@ -1463,7 +1463,7 @@ class ScrollableImageApp:
                     # Label de fila
                     tk.Label(
                         cm_grid,
-                        text=f"C{i}",
+                        text=f"C{i+1}",  # Cambiado de f"C{i}" a f"C{i+1}"
                         font=(DEFAULT_FONT, 9, "bold"),
                         bg=self.colors['accent_light'],
                         fg=self.colors['text_dark'],
@@ -1555,7 +1555,7 @@ class ScrollableImageApp:
                 item_id = tree.insert('', 'end', values=(
                     result['image_name'],
                     f"Clase {class_num}",
-                    class_names[class_num],
+                    class_names[class_num-1],  # Ajustado índice
                     f"{confidence:.2%}",
                     estado
                 ))
@@ -1736,7 +1736,7 @@ class ScrollableImageApp:
                 # Clase más frecuente
                 if class_counts:
                     most_common_class = max(class_counts.items(), key=lambda x: x[1])
-                    dominant_class = f"Clase {most_common_class[0]} ({class_names[most_common_class[0]]})"
+                    dominant_class = f"Clase {most_common_class[0]} ({class_names[most_common_class[0]-1]})"  # Ajustado índice
                 else:
                     dominant_class = "N/A"
                 
