@@ -1,7 +1,7 @@
 # etiquetador.py
 """
 Herramienta de Etiquetado de Imágenes para Análisis de Cenicilla
-Permite etiquetar imágenes en 5 clases de severidad
+Permite etiquetar imágenes en 5 clases de severidad (1-5)
 """
 
 import tkinter as tk
@@ -53,24 +53,24 @@ class ImageLabeler:
         self.labels = self.load_labels()
         self.current_index = 0
         
-        # Información de las clases
+        # Información de las clases - AHORA DE 1 A 5
         self.class_info = {
-            0: ("Clase 0 - Resistente", "#10B981", "Sin síntomas o muy leves (<5%)"),
-            1: ("Clase 1 - Moderadamente Tolerante", "#84CC16", "Síntomas leves (5-25%)"),
-            2: ("Clase 2 - Ligeramente Tolerante", "#F59E0B", "Síntomas moderados (25-50%)"),
-            3: ("Clase 3 - Susceptible", "#F97316", "Síntomas severos (50-75%)"),
-            4: ("Clase 4 - Altamente Susceptible", "#EF4444", "Síntomas muy severos (>75%)")
+            1: ("Clase 1 - Resistente", "#10B981", "Sin síntomas o muy leves (<5%)"),
+            2: ("Clase 2 - Moderadamente Tolerante", "#84CC16", "Síntomas leves (5-25%)"),
+            3: ("Clase 3 - Ligeramente Tolerante", "#F59E0B", "Síntomas moderados (25-50%)"),
+            4: ("Clase 4 - Susceptible", "#F97316", "Síntomas severos (50-75%)"),
+            5: ("Clase 5 - Altamente Susceptible", "#EF4444", "Síntomas muy severos (>75%)")
         }
         
         self.create_widgets()
         self.load_image()
         
-        # Atajos de teclado
-        self.root.bind('0', lambda e: self.assign_class(0))
+        # Atajos de teclado - AHORA 1-5
         self.root.bind('1', lambda e: self.assign_class(1))
         self.root.bind('2', lambda e: self.assign_class(2))
         self.root.bind('3', lambda e: self.assign_class(3))
         self.root.bind('4', lambda e: self.assign_class(4))
+        self.root.bind('5', lambda e: self.assign_class(5))
         self.root.bind('<Left>', lambda e: self.previous_image())
         self.root.bind('<Right>', lambda e: self.next_image())
         self.root.bind('<space>', lambda e: self.next_image())
@@ -81,6 +81,19 @@ class ImageLabeler:
             try:
                 with open(self.labels_file, 'r') as f:
                     labels = json.load(f)
+                    
+                    # MIGRAR ETIQUETAS ANTIGUAS (0-4) A NUEVAS (1-5)
+                    migrated = False
+                    for img_name, class_id in list(labels.items()):
+                        if class_id in [0, 1, 2, 3, 4]:
+                            labels[img_name] = class_id + 1
+                            migrated = True
+                    
+                    if migrated:
+                        print("⚠️ Etiquetas migradas de 0-4 a 1-5")
+                        with open(self.labels_file, 'w') as f:
+                            json.dump(labels, f, indent=2)
+                    
                     print(f"✅ Cargadas {len(labels)} etiquetas existentes")
                     return labels
             except Exception as e:
@@ -251,9 +264,9 @@ class ImageLabeler:
         )
         instructions.pack(pady=12)
         
-        # Botones de clase
+        # Botones de clase - AHORA DE 1 A 5
         self.class_buttons = []
-        for class_id in range(5):
+        for class_id in range(1, 6):  # Cambiado de range(5) a range(1, 6)
             name, color, desc = self.class_info[class_id]
             
             btn_frame = tk.Frame(right_content, bg="white")
@@ -361,7 +374,7 @@ class ImageLabeler:
         )
         shortcuts_title.pack(pady=(8, 5))
         
-        shortcuts_text = "0-4: Asignar clase\n← →: Navegar\nEspacio: Siguiente"
+        shortcuts_text = "1-5: Asignar clase\n← →: Navegar\nEspacio: Siguiente"
         shortcuts_label = tk.Label(
             shortcuts_frame,
             text=shortcuts_text,
@@ -437,13 +450,21 @@ class ImageLabeler:
         # Actualizar estado de etiquetado
         if image_name in self.labels:
             class_id = self.labels[image_name]
-            class_name, color, _ = self.class_info[class_id]
-            self.current_label_text.config(
-                text=f"✓ {class_name}", 
-                bg=color, 
-                fg="white"
-            )
-            self.current_label_frame.config(bg=color)
+            if class_id in self.class_info:
+                class_name, color, _ = self.class_info[class_id]
+                self.current_label_text.config(
+                    text=f"✓ {class_name}", 
+                    bg=color, 
+                    fg="white"
+                )
+                self.current_label_frame.config(bg=color)
+            else:
+                self.current_label_text.config(
+                    text="⚠ Etiqueta inválida", 
+                    bg="#FEF3C7", 
+                    fg="#92400E"
+                )
+                self.current_label_frame.config(bg="#FEF3C7")
         else:
             self.current_label_text.config(
                 text="⚠ Sin etiquetar", 
@@ -502,7 +523,7 @@ class ImageLabeler:
                 stats[class_id] = stats.get(class_id, 0) + 1
         
         stats_text = ""
-        for class_id in range(5):
+        for class_id in range(1, 6):  # Cambiado de range(5) a range(1, 6)
             count = stats.get(class_id, 0)
             name = self.class_info[class_id][0].split(' - ')[1]
             stats_text += f"Clase {class_id} ({name}): {count}\n"
@@ -548,10 +569,11 @@ class ImageLabeler:
         summary += "Distribución por clase:\n"
         for class_id in sorted(stats.keys()):
             count = stats[class_id]
-            name = self.class_info[class_id][0]
-            summary += f"  • {name}: {count}\n"
+            if class_id in self.class_info:
+                name = self.class_info[class_id][0]
+                summary += f"  • {name}: {count}\n"
         
-        summary += f"\n🎓 Ahora puedes entrenar el modelo SVM\n"
+        summary += f"\n🎯 Ahora puedes entrenar los modelos\n"
         summary += f"   ejecutando: python main.py"
         
         messagebox.showinfo("Completado", summary)
