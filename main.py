@@ -1282,7 +1282,7 @@ class ScrollableImageApp:
             )
             metrics_title.pack(pady=(10, 5))
             
-            # Calcular métricas
+            # Calcular métricas usando el evaluador
             model_metrics = self.evaluator.calculate_metrics(results, model_name)
             
             if 'error' in model_metrics:
@@ -1689,7 +1689,7 @@ class ScrollableImageApp:
         comparison_grid.pack(fill="x", padx=30, pady=15)
         
         # Encabezados
-        headers = ["Modelo", "Estado", "Conf. Promedio", "Clase Dominante", "Total Imágenes"]
+        headers = ["Modelo", "Estado", "Exactitud", "Precisión", "Recall", "F1-Score", "Conf. Promedio"]
         for col, header in enumerate(headers):
             tk.Label(
                 comparison_grid,
@@ -1697,8 +1697,8 @@ class ScrollableImageApp:
                 font=(DEFAULT_FONT, 11, "bold"),
                 bg=self.colors['accent_light'],
                 fg=self.colors['text_dark'],
-                padx=15,
-                pady=10
+                padx=10,
+                pady=8
             ).grid(row=0, column=col, sticky="ew", padx=2, pady=2)
         
         # Colores de modelo
@@ -1708,57 +1708,42 @@ class ScrollableImageApp:
             'Transformer': self.colors['warning']
         }
         
-        class_names = [
-            "Resistente",
-            "Moderadamente Tolerante",
-            "Ligeramente Tolerante",
-            "Susceptible",
-            "Altamente Susceptible"
-        ]
-        
         # Datos de cada modelo
         row = 1
         for model_name, results in all_results.items():
             is_trained = self.models[model_name].is_trained
             
-            if is_trained and results and len(results) > 0 and results[0].get('class', -1) >= 0:
-                # Modelo entrenado con resultados válidos
-                confidences = [r['confidence'] for r in results if 'confidence' in r and r['confidence'] > 0]
-                avg_confidence = np.mean(confidences) if confidences else 0
-                
-                # Distribución de clases
-                class_counts = {}
-                for result in results:
-                    class_num = result.get('class', -1)
-                    if class_num >= 0:
-                        class_counts[class_num] = class_counts.get(class_num, 0) + 1
-                
-                # Clase más frecuente
-                if class_counts:
-                    most_common_class = max(class_counts.items(), key=lambda x: x[1])
-                    dominant_class = f"Clase {most_common_class[0]} ({class_names[most_common_class[0]-1]})"  # Ajustado índice
-                else:
-                    dominant_class = "N/A"
-                
+            # Calcular métricas para este modelo
+            model_metrics = self.evaluator.calculate_metrics(results, model_name)
+            
+            if is_trained and 'error' not in model_metrics:
+                # Modelo entrenado con métricas válidas
                 estado = "✅ Activo"
                 estado_color = self.colors['success']
-                total_images = f"{len(results)} imágenes"
-                conf_text = f"{avg_confidence:.2%}"
+                exactitud = f"{model_metrics['accuracy']:.2%}"
+                precision = f"{model_metrics['precision_weighted']:.2%}"
+                recall = f"{model_metrics['recall_weighted']:.2%}"
+                f1_score = f"{model_metrics['f1_weighted']:.2%}"
+                conf_promedio = f"{model_metrics['avg_confidence']:.2%}"
             else:
-                # Modelo no entrenado
+                # Modelo no entrenado o con error
                 estado = "❌ No entrenado"
                 estado_color = self.colors['danger']
-                conf_text = "N/A"
-                dominant_class = "N/A"
-                total_images = "N/A"
+                exactitud = "N/A"
+                precision = "N/A"
+                recall = "N/A"
+                f1_score = "N/A"
+                conf_promedio = "N/A"
             
             # Fila de modelo
             data = [
                 (f"🤖 {model_name}", model_colors[model_name], "white"),
                 (estado, self.colors['card'], estado_color),
-                (conf_text, self.colors['card'], self.colors['text_dark']),
-                (dominant_class, self.colors['card'], self.colors['text_dark']),
-                (total_images, self.colors['card'], self.colors['text_dark'])
+                (exactitud, self.colors['card'], self.colors['text_dark']),
+                (precision, self.colors['card'], self.colors['text_dark']),
+                (recall, self.colors['card'], self.colors['text_dark']),
+                (f1_score, self.colors['card'], self.colors['text_dark']),
+                (conf_promedio, self.colors['card'], self.colors['text_dark'])
             ]
             
             for col, (value, bg_color, fg_color) in enumerate(data):
@@ -1768,8 +1753,8 @@ class ScrollableImageApp:
                     font=(DEFAULT_FONT, 10, "bold" if col == 0 else "normal"),
                     bg=bg_color,
                     fg=fg_color,
-                    padx=15,
-                    pady=12
+                    padx=10,
+                    pady=8
                 ).grid(row=row, column=col, sticky="ew", padx=2, pady=2)
             
             row += 1
@@ -1781,19 +1766,16 @@ class ScrollableImageApp:
         # Separador final
         tk.Frame(comparison_frame, bg=self.colors['border'], height=2).pack(fill="x", padx=20, pady=15)
         
+        # Generar recomendaciones
+        all_metrics = {}
+        for model_name, results in all_results.items():
+            all_metrics[model_name] = self.evaluator.calculate_metrics(results, model_name)
+        
+        recommendation_text = self.evaluator.get_model_recommendation(all_metrics)
+        
         # Recomendación final
         recommendation_frame = tk.Frame(comparison_frame, bg=self.colors['accent_light'])
         recommendation_frame.pack(fill="x", padx=20, pady=15)
-        
-        if len(trained_models) == 3:
-            recommendation_text = "💡 RECOMENDACIÓN: Compara los resultados de los 3 modelos para obtener una evaluación más robusta.\n"
-            recommendation_text += "Cada modelo utiliza técnicas diferentes de análisis y puede identificar patrones únicos en las hojas."
-        elif len(trained_models) > 0:
-            untrained_count = 3 - len(trained_models)
-            recommendation_text = f"💡 RECOMENDACIÓN: Tienes {len(trained_models)} modelo(s) entrenado(s).\n"
-            recommendation_text += f"Entrena los {untrained_count} modelo(s) restante(s) para obtener una evaluación más completa."
-        else:
-            recommendation_text = "💡 RECOMENDACIÓN: Entrena al menos un modelo usando 'etiquetador.py' para comenzar a analizar imágenes."
         
         recommendation_label = tk.Label(
             recommendation_frame,
@@ -1842,10 +1824,20 @@ class ScrollableImageApp:
                         f.write(f"MODELO: {model_name}\n")
                         f.write(f"{'=' * 80}\n\n")
                         
+                        # Calcular métricas para este modelo
+                        metrics = self.evaluator.calculate_metrics(results, model_name)
+                        
+                        if 'error' not in metrics:
+                            f.write(f"MÉTRICAS DEL MODELO:\n")
+                            f.write(f"- Exactitud: {metrics['accuracy']:.2%}\n")
+                            f.write(f"- Precisión: {metrics['precision_weighted']:.2%}\n")
+                            f.write(f"- Recall: {metrics['recall_weighted']:.2%}\n")
+                            f.write(f"- F1-Score: {metrics['f1_weighted']:.2%}\n")
+                            f.write(f"- Confianza Promedio: {metrics['avg_confidence']:.2%}\n\n")
+                        
                         for result in results:
                             f.write(f"Imagen: {result['image_name']}\n")
                             f.write(f"  - Clase: {result['class']}\n")
-                            f.write(f"  - Severidad: {result['class_name']}\n")
                             f.write(f"  - Confianza: {result['confidence']:.2%}\n\n")
                 
                 messagebox.showinfo("Éxito", f"Resultados exportados correctamente a:\n{filename}")
