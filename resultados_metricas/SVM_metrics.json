@@ -1,0 +1,13 @@
+{
+    "model_name": "SVM",
+    "total_samples": 500,
+    "valid_predictions": 500,
+    "confidence_mean": 0.5908864865229698,
+    "confidence_std": 0.13487546547825038,
+    "confidence_min": 0.22444941908129953,
+    "confidence_max": 0.8953061021028444,
+    "confidence_median": 0.6072055312622036,
+    "high_confidence_ratio": 0.048,
+    "medium_confidence_ratio": 0.472,
+    "low_confidence_ratio": 0.48,
+    "class_distribution": {

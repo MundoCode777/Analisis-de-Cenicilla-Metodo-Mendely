@@ -2,14 +2,13 @@
   "n_samples": 500,
   "n_features": 35,
   "classes": [
-    0,
     1,
     2,
     3,
-    4
+    4,
+    5
   ],
-  "train_accuracy": 0.8225,
-  "test_accuracy": 0.38,
+  "test_accuracy": 0.49,
   "n_train_samples": 400,
   "n_test_samples": 100,
   "valid_images": [
