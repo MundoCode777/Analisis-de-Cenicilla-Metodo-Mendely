@@ -8,7 +8,7 @@ import threading
 from modelos.svm_model import SVMModel
 from modelos.cnn_model import CNNModel
 from modelos.transformer_model import TransformerModel
-from evaluador_metricas import MetricsEvaluator
+from metricas import MetricsEvaluator
 
 # Helper: detectar sistema para tipografías
 DEFAULT_FONT = "Segoe UI" if platform.system() == "Windows" else "Helvetica"
