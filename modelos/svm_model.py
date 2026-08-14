@@ -29,7 +29,6 @@ class SVMModel:
     # EXTRACCIÓN DE CARACTERÍSTICAS (35)
     # ============================================================
     def extract_features(self, image_path):
-        """Extraer 35 características de la imagen para detectar cenicilla."""
         try:
             with Image.open(image_path) as img:
                 img = img.convert('RGB')

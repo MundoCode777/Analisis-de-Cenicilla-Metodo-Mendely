@@ -1,0 +1,13 @@
+{
+  "samples": 1425,
+  "train_split": 1140,
+  "val_split": 285,
+  "val_accuracy": 0.6105263233184814,
+  "classes": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ]
+}

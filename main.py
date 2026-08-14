@@ -8,6 +8,9 @@ import threading
 from modelos.svm_model import SVMModel
 from modelos.cnn_model import CNNModel
 from modelos.transformer_model import TransformerModel
+from modelos.efficientnet_model import EfficientNetModel
+from modelos.convnext_model import ConvNeXtModel
+from modelos.swin_transformer_model import SwinTransformerModel
 from metricas import MetricsEvaluator
 
 # Helper: detectar sistema para tipografías
@@ -50,7 +53,7 @@ class ScrollableImageApp:
         self.create_widgets()
     
     def init_models(self):
-        """Inicializar los tres modelos"""
+        """Inicializar los seis modelos"""
         try:
             print("\n" + "="*60)
             print("🤖 INICIALIZANDO MODELOS")
@@ -75,6 +78,15 @@ class ScrollableImageApp:
                 print(f"      - Archivo modelo: ✅ Existe")
             else:
                 print(f"      - Archivo modelo: ❌ No existe")
+
+            self.models['EfficientNet'] = EfficientNetModel()
+            print(f"   EfficientNet: {'✅ Entrenado' if hasattr(self.models['EfficientNet'], 'is_trained') and self.models['EfficientNet'].is_trained else '❌ No entrenado'}")
+
+            self.models['ConvNeXt'] = ConvNeXtModel()
+            print(f"   ConvNeXt: {'✅ Entrenado' if hasattr(self.models['ConvNeXt'], 'is_trained') and self.models['ConvNeXt'].is_trained else '❌ No entrenado'}")
+
+            self.models['Swin'] = SwinTransformerModel()
+            print(f"   Swin: {'✅ Entrenado' if hasattr(self.models['Swin'], 'is_trained') and self.models['Swin'].is_trained else '❌ No entrenado'}")
             
             untrained = []
             for name, model in self.models.items():
@@ -163,6 +175,9 @@ class ScrollableImageApp:
             ("🤖 SVM", self.colors['primary']),
             ("🧠 CNN", self.colors['accent']),
             ("⚡ Transformer", self.colors['warning']),
+            ("🚀 EfficientNet", self.colors['success']),
+            ("📐 ConvNeXt", self.colors['danger']),
+            ("🪟 Swin", self.colors['primary_hover']),
             ("📊 5 Clases", self.colors['success'])
         ]
         
@@ -264,11 +279,18 @@ class ScrollableImageApp:
         
         # Info de modelos
         text4 = tk.Label(inner_frame, 
-                        text="🤖 Se utilizarán 3 modelos: SVM, CNN y Transformer",
+                        text="🤖 Se utilizarán 6 modelos: SVM, CNN, Vision Transformer,",
                         font=(DEFAULT_FONT, 11),
                         bg=self.colors['bg'], 
                         fg=self.colors['primary'])
         text4.pack(pady=(5, 0))
+
+        text4b = tk.Label(inner_frame,
+                        text="EfficientNet, ConvNeXt y Swin Transformer",
+                        font=(DEFAULT_FONT, 11),
+                        bg=self.colors['bg'],
+                        fg=self.colors['primary'])
+        text4b.pack(pady=(0, 0))
         
         # Info de clases
         text5 = tk.Label(inner_frame, 
@@ -392,7 +414,7 @@ class ScrollableImageApp:
                               fg=self.colors['text_light'])
         footer_text.pack(pady=5)
         
-        version = tk.Label(footer, text="Version 2.0",
+        version = tk.Label(footer, text="Version 3.0",
                           font=(DEFAULT_FONT, 9),
                           bg=self.colors['bg'],
                           fg=self.colors['text_light'])
@@ -718,6 +740,12 @@ class ScrollableImageApp:
                 self.models['CNN'] = CNNModel()
             elif model_name == 'Transformer':
                 self.models['Transformer'] = TransformerModel()
+            elif model_name == 'EfficientNet':
+                self.models['EfficientNet'] = EfficientNetModel()
+            elif model_name == 'ConvNeXt':
+                self.models['ConvNeXt'] = ConvNeXtModel()
+            elif model_name == 'Swin':
+                self.models['Swin'] = SwinTransformerModel()
             
             model = self.models[model_name]
             is_trained = hasattr(model, 'is_trained') and model.is_trained
@@ -817,7 +845,7 @@ class ScrollableImageApp:
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
     
     def analyze_dataset(self):
-        """Analizar todas las imágenes con los 3 modelos"""
+        """Analizar todas las imágenes con los seis modelos"""
         if not os.path.exists("data"):
             messagebox.showerror("Error", "Carpeta 'data' no encontrada.\n\nCrea una carpeta llamada 'data' y coloca allí las imágenes de hojas.")
             return
@@ -831,7 +859,7 @@ class ScrollableImageApp:
         
         self.btn_analyze.config(state="disabled", text="🔄 Analizando...")
         
-        self.info_label.config(text=f"🔍 Analizando {len(image_files)} imágenes con 3 modelos...", 
+        self.info_label.config(text=f"🔍 Analizando {len(image_files)} imágenes con 6 modelos...", 
                               fg=self.colors['primary'])
         
         thread = threading.Thread(target=self.run_analysis)
@@ -839,7 +867,7 @@ class ScrollableImageApp:
         thread.start()
     
     def run_analysis(self):
-        """Ejecutar análisis con los 3 modelos"""
+        """Ejecutar análisis con los seis modelos"""
         try:
             self.root.after(0, self.clear_analysis_frame)
             
@@ -916,18 +944,31 @@ class ScrollableImageApp:
         return img
     
     def display_results(self, all_results):
-        """Mostrar resultados de los 3 modelos con referencias visuales"""
+        """Mostrar resultados de los seis modelos con referencias visuales"""
+        # ============================================================
+        # Validar resultados de modelos no entrenados
+        # ============================================================
+        for model_name in list(all_results.keys()):
+            results = all_results[model_name]
+            if results and len(results) > 0:
+                has_invalid = any(r.get('class', -1) == -1 for r in results)
+                if has_invalid:
+                    print(f"⚠️ {model_name} tiene resultados inválidos (modelo no entrenado)")
+
+        # Crear pestañas para cada modelo
         notebook = ttk.Notebook(self.analysis_frame)
         notebook.pack(fill="both", expand=True, padx=10, pady=10)
-        
+
+        # Colores para las clases
         class_colors = {
             1: "#10B981",
             2: "#84CC16",
             3: "#F59E0B",
             4: "#F97316",
-            5: "#EF4444"
+            5: "#EF4444",
+            -1: "#94a3b8"  # Gris para modelos no entrenados
         }
-        
+
         class_names = [
             "Resistente",
             "Moderadamente Tolerante",
@@ -935,34 +976,34 @@ class ScrollableImageApp:
             "Susceptible",
             "Altamente Susceptible"
         ]
-        
+
         for model_name, results in all_results.items():
-            model_trained = self.models[model_name].is_trained
-            
+            model_trained = getattr(self.models.get(model_name), "is_trained", False)
+
             outer_frame = tk.Frame(notebook, bg=self.colors['bg'])
             notebook.add(outer_frame, text=f"{model_name}")
-            
+
             canvas_tab = tk.Canvas(outer_frame, bg=self.colors['bg'], highlightthickness=0)
             scrollbar_tab = ttk.Scrollbar(outer_frame, orient="vertical", command=canvas_tab.yview)
             model_frame = tk.Frame(canvas_tab, bg=self.colors['bg'])
-            
+
             model_frame.bind(
                 "<Configure>",
                 lambda e, c=canvas_tab: c.configure(scrollregion=c.bbox("all"))
             )
-            
+
             canvas_tab.create_window((0, 0), window=model_frame, anchor="nw")
             canvas_tab.configure(yscrollcommand=scrollbar_tab.set)
-            
+
             canvas_tab.pack(side="left", fill="both", expand=True)
             scrollbar_tab.pack(side="right", fill="y")
-            
+
             if not model_trained:
                 warning_frame = tk.Frame(model_frame, bg=self.colors['card'],
-                                        highlightbackground=self.colors['warning'],
-                                        highlightthickness=3)
+                                         highlightbackground=self.colors['warning'],
+                                         highlightthickness=3)
                 warning_frame.pack(fill="both", expand=True, padx=20, pady=20)
-                
+
                 icon_label = tk.Label(
                     warning_frame,
                     text="⚠️",
@@ -971,7 +1012,7 @@ class ScrollableImageApp:
                     fg=self.colors['warning']
                 )
                 icon_label.pack(pady=(40, 20))
-                
+
                 title_label = tk.Label(
                     warning_frame,
                     text=f"MODELO {model_name} NO ENTRENADO",
@@ -980,7 +1021,7 @@ class ScrollableImageApp:
                     fg=self.colors['text_dark']
                 )
                 title_label.pack(pady=(0, 15))
-                
+
                 message = tk.Label(
                     warning_frame,
                     text=f"El modelo {model_name} necesita ser entrenado antes de poder realizar predicciones.\n\n"
@@ -996,10 +1037,10 @@ class ScrollableImageApp:
                     justify="center"
                 )
                 message.pack(pady=(0, 40), padx=40)
-                
+
                 btn_container_warning = tk.Frame(warning_frame, bg=self.colors['card'])
                 btn_container_warning.pack(pady=(0, 40))
-                
+
                 info_btn = tk.Button(
                     btn_container_warning,
                     text="📖 Más Información",
@@ -1010,10 +1051,10 @@ class ScrollableImageApp:
                     pady=12,
                     cursor="hand2",
                     relief="flat",
-                    command=lambda: messagebox.showinfo(
-                        f"Información - {model_name}",
-                        f"El modelo {model_name} es un modelo de Machine Learning que requiere entrenamiento previo.\n\n"
-                        f"Características del {model_name}:\n"
+                    command=lambda mn=model_name: messagebox.showinfo(
+                        f"Información - {mn}",
+                        f"El modelo {mn} es un modelo de Machine Learning que requiere entrenamiento previo.\n\n"
+                        f"Características del {mn}:\n"
                         f"- Requiere datos etiquetados para aprender\n"
                         f"- Mínimo 50 imágenes etiquetadas recomendadas\n"
                         f"- Mayor precisión con más datos\n\n"
@@ -1021,7 +1062,7 @@ class ScrollableImageApp:
                     )
                 )
                 info_btn.pack(side="left", padx=5)
-                
+
                 reload_btn = tk.Button(
                     btn_container_warning,
                     text="🔄 Recargar Modelo",
@@ -1035,7 +1076,7 @@ class ScrollableImageApp:
                     command=lambda mn=model_name: self.reload_model(mn)
                 )
                 reload_btn.pack(side="left", padx=5)
-                
+
                 continue
             
             # Título del modelo
@@ -1159,7 +1200,6 @@ class ScrollableImageApp:
             
             tk.Frame(stats_grid, bg=self.colors['border'], height=1).pack(fill="x", pady=10)
             
-            # SOLO MOSTRAR LA CLASE PREDOMINANTE
             dist_label = tk.Label(
                 stats_grid,
                 text="📈 Distribución por clase:",
@@ -1169,7 +1209,6 @@ class ScrollableImageApp:
             )
             dist_label.pack(anchor="w", pady=(5, 10))
             
-            # Encontrar la clase con más predicciones
             if class_distribution:
                 predominant_class = max(class_distribution, key=class_distribution.get)
                 predominant_count = class_distribution[predominant_class]
@@ -1474,7 +1513,7 @@ class ScrollableImageApp:
         
         total_images = len(next(iter(all_results.values())))
         self.info_label.config(
-            text=f"✅ Análisis completado: {total_images} imágenes procesadas con 3 modelos", 
+            text=f"✅ Análisis completado: {total_images} imágenes procesadas con 6 modelos", 
             fg=self.colors['success'],
             font=(DEFAULT_FONT, 12, "bold")
         )
@@ -1501,7 +1540,7 @@ class ScrollableImageApp:
         
         subtitle = tk.Label(
             comparison_frame,
-            text="Análisis comparativo del rendimiento de los 3 modelos de IA",
+            text="Análisis comparativo del rendimiento de los seis modelos de IA",
             font=(DEFAULT_FONT, 11),
             bg=self.colors['card'],
             fg=self.colors['text_medium']
@@ -1545,7 +1584,10 @@ class ScrollableImageApp:
         model_colors = {
             'SVM': self.colors['primary'],
             'CNN': self.colors['accent'],
-            'Transformer': self.colors['warning']
+            'Transformer': self.colors['warning'],
+            'EfficientNet': self.colors['success'],
+            'ConvNeXt': self.colors['danger'],
+            'Swin': self.colors['primary_hover'],
         }
         
         row = 1
@@ -1572,7 +1614,7 @@ class ScrollableImageApp:
                 conf_promedio = "N/A"
             
             data = [
-                (f"🤖 {model_name}", model_colors[model_name], "white"),
+                (f"🤖 {model_name}", model_colors.get(model_name, self.colors['text_dark']), "white"),
                 (estado, self.colors['card'], estado_color),
                 (exactitud, self.colors['card'], self.colors['text_dark']),
                 (precision, self.colors['card'], self.colors['text_dark']),

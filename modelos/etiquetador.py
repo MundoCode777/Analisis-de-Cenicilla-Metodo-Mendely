@@ -2,14 +2,25 @@
 """
 Herramienta de Etiquetado de Imágenes para Análisis de Cenicilla
 Permite etiquetar imágenes en 5 clases de severidad (1-5)
+
+Incluye además:
+- Importación automática desde carpetas ya organizadas por clase
+  (Clase-1, Clase-2, ..., Clase-5), sin necesidad de etiquetar
+  manualmente imagen por imagen.
+- Botones para lanzar el entrenamiento de todos los modelos
+  (entrenar_todos.py) y para abrir la aplicación principal (main.py)
+  directamente desde esta misma ventana.
 """
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, ttk, filedialog
 from PIL import Image, ImageTk
 import os
 import json
 import platform
+import shutil
+import subprocess
+import sys
 
 DEFAULT_FONT = "Segoe UI" if platform.system() == "Windows" else "Helvetica"
 
@@ -38,18 +49,8 @@ class ImageLabeler:
         self.images = [f for f in os.listdir(self.data_folder) 
                       if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff'))]
         
-        if not self.images:
-            messagebox.showerror(
-                "Error", 
-                "No hay imágenes en la carpeta 'data'.\n\n"
-                "Coloca las imágenes de hojas en la carpeta 'data'."
-            )
-            root.destroy()
-            return
-        
-        print(f"✅ Encontradas {len(self.images)} imágenes en la carpeta 'data'")
-        
-        # Cargar etiquetas existentes
+        # Cargar etiquetas existentes (puede que aún no haya imágenes sueltas
+        # si el usuario todavía no importó desde carpetas por clase)
         self.labels = self.load_labels()
         self.current_index = 0
         
@@ -63,7 +64,11 @@ class ImageLabeler:
         }
         
         self.create_widgets()
-        self.load_image()
+        
+        if self.images:
+            self.load_image()
+        else:
+            self.show_empty_state()
         
         # Atajos de teclado - AHORA 1-5
         self.root.bind('1', lambda e: self.assign_class(1))
@@ -111,6 +116,152 @@ class ImageLabeler:
             print(f"❌ Error guardando etiquetas: {e}")
             messagebox.showerror("Error", f"No se pudieron guardar las etiquetas:\n{e}")
     
+    # ============================================================
+    # IMPORTACIÓN AUTOMÁTICA DESDE CARPETAS POR CLASE
+    # ============================================================
+    def import_from_class_folders(self):
+        """
+        Importa imágenes ya organizadas en subcarpetas Clase-1 .. Clase-5
+        (por ejemplo data/Clase-1, data/Clase-2, ...) y genera las
+        etiquetas automáticamente, sin clasificar imagen por imagen.
+        Copia (no mueve) los archivos hacia la carpeta 'data' plana,
+        con un prefijo por clase para evitar que se sobrescriban
+        nombres repetidos entre carpetas.
+        """
+        carpeta_origen = filedialog.askdirectory(
+            title="Selecciona la carpeta que contiene Clase-1, Clase-2, ... Clase-5",
+            initialdir=self.data_folder
+        )
+        if not carpeta_origen:
+            return
+
+        total_importadas = 0
+        resumen = {}
+
+        for clase_num in range(1, 6):
+            posibles_nombres = [
+                f"Clase-{clase_num}", f"clase-{clase_num}",
+                f"Clase_{clase_num}", f"Clase {clase_num}",
+                f"clase{clase_num}", f"Clase{clase_num}",
+            ]
+            carpeta_clase = None
+            for nombre in posibles_nombres:
+                ruta = os.path.join(carpeta_origen, nombre)
+                if os.path.isdir(ruta):
+                    carpeta_clase = ruta
+                    break
+
+            if carpeta_clase is None:
+                print(f"⚠️ No se encontró carpeta para la Clase {clase_num} en {carpeta_origen}")
+                continue
+
+            imagenes = [f for f in os.listdir(carpeta_clase)
+                        if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff'))]
+
+            for img_name in imagenes:
+                origen = os.path.join(carpeta_clase, img_name)
+                nuevo_nombre = f"clase{clase_num}_{img_name}"
+                destino = os.path.join(self.data_folder, nuevo_nombre)
+
+                try:
+                    shutil.copy2(origen, destino)
+                    self.labels[nuevo_nombre] = clase_num
+                    total_importadas += 1
+                    resumen[clase_num] = resumen.get(clase_num, 0) + 1
+                except Exception as e:
+                    print(f"⚠️ Error copiando {img_name}: {e}")
+
+        if total_importadas == 0:
+            messagebox.showwarning(
+                "Nada para importar",
+                "No se encontraron carpetas Clase-1 a Clase-5 con imágenes "
+                f"dentro de:\n{carpeta_origen}"
+            )
+            return
+
+        self.save_labels()
+
+        # Refrescar la lista de imágenes y la interfaz con los datos nuevos
+        self.images = [f for f in os.listdir(self.data_folder)
+                        if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff'))]
+        self.current_index = 0
+        if self.images:
+            self.load_image()
+
+        resumen_texto = "\n".join(
+            f"  • Clase {c}: {n} imágenes" for c, n in sorted(resumen.items())
+        )
+        messagebox.showinfo(
+            "Importación completada",
+            f"✅ Se importaron {total_importadas} imágenes con sus etiquetas.\n\n"
+            f"{resumen_texto}\n\n"
+            f"Ya puedes entrenar todos los modelos con el botón "
+            f"'Entrenar Todos los Modelos'."
+        )
+
+    # ============================================================
+    # LANZAR ENTRENAMIENTO Y APP PRINCIPAL DESDE AQUÍ MISMO
+    # ============================================================
+    def entrenar_todos_los_modelos(self):
+        """Ejecuta entrenar_todos.py en una ventana de consola aparte."""
+        if not self.labels or len(self.labels) < 10:
+            messagebox.showwarning(
+                "Faltan etiquetas",
+                "Necesitas al menos 10 imágenes etiquetadas (20 para los "
+                "modelos tipo Transformer) antes de entrenar.\n\n"
+                "Usa 'Importar desde Carpetas' o etiqueta manualmente primero."
+            )
+            return
+
+        respuesta = messagebox.askyesno(
+            "Entrenar modelos",
+            "Esto va a ejecutar 'entrenar_todos.py' en una ventana aparte "
+            "y puede tardar bastante (6 modelos, incluidos los de tipo "
+            "Transformer).\n\n¿Deseas continuar?"
+        )
+        if not respuesta:
+            return
+
+        try:
+            python_exe = sys.executable  # usa el mismo intérprete de Python activo
+            if platform.system() == "Windows":
+                subprocess.Popen(
+                    [python_exe, "entrenar_todos.py"],
+                    creationflags=subprocess.CREATE_NEW_CONSOLE
+                )
+            else:
+                subprocess.Popen([python_exe, "entrenar_todos.py"])
+
+            messagebox.showinfo(
+                "Entrenamiento iniciado",
+                "Se abrió una nueva ventana de consola entrenando los 6 modelos.\n"
+                "Revisa esa ventana para ver el progreso de cada uno."
+            )
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo iniciar el entrenamiento:\n{e}")
+
+    def abrir_aplicacion_principal(self):
+        """Abre main.py para comprobar los resultados de los modelos entrenados."""
+        try:
+            python_exe = sys.executable
+            if platform.system() == "Windows":
+                subprocess.Popen(
+                    [python_exe, "main.py"],
+                    creationflags=subprocess.CREATE_NEW_CONSOLE
+                )
+            else:
+                subprocess.Popen([python_exe, "main.py"])
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo abrir main.py:\n{e}")
+
+    def show_empty_state(self):
+        """Mensaje cuando aún no hay imágenes sueltas en data/ (antes de importar)."""
+        self.progress_label.config(text="No hay imágenes sueltas en 'data/' todavía")
+        self.name_label.config(
+            text="Usa el botón '📂 Importar desde Carpetas' para cargar "
+                 "las imágenes organizadas en Clase-1 a Clase-5."
+        )
+
     def create_widgets(self):
         # ========== HEADER ==========
         header = tk.Frame(self.root, bg="#6366F1", height=80)
@@ -162,7 +313,6 @@ class ImageLabeler:
         
         self.canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
         
-        # Grid layout para el canvas y scrollbars
         self.canvas.grid(row=0, column=0, sticky="nsew")
         v_scrollbar.grid(row=0, column=1, sticky="ns")
         h_scrollbar.grid(row=1, column=0, sticky="ew")
@@ -170,18 +320,15 @@ class ImageLabeler:
         canvas_container.grid_rowconfigure(0, weight=1)
         canvas_container.grid_columnconfigure(0, weight=1)
         
-        # Frame interior para la imagen
         self.image_frame = tk.Frame(self.canvas, bg="white")
         self.canvas_window = self.canvas.create_window((0, 0), window=self.image_frame, anchor="nw")
         
         self.image_label = tk.Label(self.image_frame, bg="white")
         self.image_label.pack(expand=True, fill="both")
         
-        # Configurar el scroll
         self.image_frame.bind("<Configure>", self.on_frame_configure)
         self.canvas.bind("<Configure>", self.on_canvas_configure)
         
-        # Nombre de archivo
         self.name_label = tk.Label(
             left_panel, 
             text="", 
@@ -235,11 +382,9 @@ class ImageLabeler:
         right_panel.pack(side="right", fill="y")
         right_panel.pack_propagate(False)
         
-        # Crear un frame con scroll para los botones de clasificación
         right_scroll_frame = tk.Frame(right_panel, bg="white")
         right_scroll_frame.pack(fill="both", expand=True)
         
-        # Canvas para el panel derecho
         right_canvas = tk.Canvas(right_scroll_frame, bg="white", highlightthickness=0)
         right_scrollbar = ttk.Scrollbar(right_scroll_frame, orient="vertical", command=right_canvas.yview)
         right_canvas.configure(yscrollcommand=right_scrollbar.set)
@@ -247,9 +392,61 @@ class ImageLabeler:
         right_scrollbar.pack(side="right", fill="y")
         right_canvas.pack(side="left", fill="both", expand=True)
         
-        # Frame interior para el contenido
         right_content = tk.Frame(right_canvas, bg="white")
         right_canvas.create_window((0, 0), window=right_content, anchor="nw")
+        
+        # ========== NUEVO: IMPORTACIÓN Y AUTOMATIZACIÓN ==========
+        auto_frame = tk.Frame(right_content, bg="#EEF2FF")
+        auto_frame.pack(fill="x", pady=(0, 15))
+        
+        auto_title = tk.Label(
+            auto_frame,
+            text="⚡ Flujo automático",
+            font=(DEFAULT_FONT, 12, "bold"),
+            bg="#EEF2FF",
+            fg="#4338CA"
+        )
+        auto_title.pack(pady=(10, 8))
+        
+        import_btn = tk.Button(
+            auto_frame,
+            text="📂 Importar desde Carpetas\n(Clase-1 ... Clase-5)",
+            font=(DEFAULT_FONT, 10, "bold"),
+            bg="#6366F1",
+            fg="white",
+            relief="flat",
+            pady=10,
+            cursor="hand2",
+            justify="center",
+            command=self.import_from_class_folders
+        )
+        import_btn.pack(fill="x", padx=12, pady=(0, 8))
+        
+        train_btn = tk.Button(
+            auto_frame,
+            text="🚀 Entrenar Todos los Modelos",
+            font=(DEFAULT_FONT, 10, "bold"),
+            bg="#10B981",
+            fg="white",
+            relief="flat",
+            pady=10,
+            cursor="hand2",
+            command=self.entrenar_todos_los_modelos
+        )
+        train_btn.pack(fill="x", padx=12, pady=(0, 8))
+        
+        open_app_btn = tk.Button(
+            auto_frame,
+            text="🖥️ Abrir Aplicación Principal",
+            font=(DEFAULT_FONT, 10, "bold"),
+            bg="#8B5CF6",
+            fg="white",
+            relief="flat",
+            pady=10,
+            cursor="hand2",
+            command=self.abrir_aplicacion_principal
+        )
+        open_app_btn.pack(fill="x", padx=12, pady=(0, 12))
         
         # Instrucciones
         instructions_frame = tk.Frame(right_content, bg="#DDD6FE")
@@ -257,7 +454,7 @@ class ImageLabeler:
         
         instructions = tk.Label(
             instructions_frame, 
-            text="Selecciona la clase de severidad:",
+            text="O clasifica manualmente imagen por imagen:",
             font=(DEFAULT_FONT, 13, "bold"),
             bg="#DDD6FE", 
             fg="#5B21B6"
@@ -266,7 +463,7 @@ class ImageLabeler:
         
         # Botones de clase - AHORA DE 1 A 5
         self.class_buttons = []
-        for class_id in range(1, 6):  # Cambiado de range(5) a range(1, 6)
+        for class_id in range(1, 6):
             name, color, desc = self.class_info[class_id]
             
             btn_frame = tk.Frame(right_content, bg="white")
@@ -289,7 +486,6 @@ class ImageLabeler:
             )
             btn.pack(fill="x")
             
-            # Agregar atajo de teclado visible
             shortcut = tk.Label(
                 btn_frame,
                 text=f"Atajo: {class_id}",
@@ -385,28 +581,23 @@ class ImageLabeler:
         )
         shortcuts_label.pack(pady=(0, 8))
         
-        # Configurar el scroll del panel derecho
         def configure_right_scroll(event):
             right_canvas.configure(scrollregion=right_canvas.bbox("all"))
         
         right_content.bind("<Configure>", configure_right_scroll)
         
-        # Habilitar scroll con mouse
         def on_mousewheel(event):
             right_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         
         right_canvas.bind("<MouseWheel>", on_mousewheel)
     
     def on_frame_configure(self, event):
-        """Reset the scroll region to encompass the inner frame"""
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
     
     def on_canvas_configure(self, event):
-        """Reset the canvas window to encompass inner frame when required"""
         self.canvas.itemconfig(self.canvas_window, width=event.width)
     
     def adjust_color_brightness(self, hex_color, factor):
-        """Ajustar brillo de un color hexadecimal"""
         hex_color = hex_color.lstrip('#')
         r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
         r = int(r * factor)
@@ -416,6 +607,10 @@ class ImageLabeler:
     
     def load_image(self):
         """Cargar y mostrar la imagen actual"""
+        if not self.images:
+            self.show_empty_state()
+            return
+
         if self.current_index >= len(self.images):
             self.finish_labeling()
             return
@@ -424,7 +619,6 @@ class ImageLabeler:
         image_path = os.path.join(self.data_folder, image_name)
         
         try:
-            # Cargar imagen
             img = Image.open(image_path)
             img.thumbnail((700, 500), Image.Resampling.LANCZOS)
             photo = ImageTk.PhotoImage(img)
@@ -436,7 +630,6 @@ class ImageLabeler:
             print(f"⚠️ Error cargando imagen {image_name}: {e}")
             self.image_label.config(text=f"Error cargando imagen:\n{e}")
         
-        # Actualizar información
         labeled_count = len([k for k in self.labels if k in self.images])
         total_count = len(self.images)
         progress_pct = (labeled_count / total_count * 100) if total_count > 0 else 0
@@ -447,7 +640,6 @@ class ImageLabeler:
         )
         self.name_label.config(text=f"📄 {image_name}")
         
-        # Actualizar estado de etiquetado
         if image_name in self.labels:
             class_id = self.labels[image_name]
             if class_id in self.class_info:
@@ -473,19 +665,17 @@ class ImageLabeler:
             )
             self.current_label_frame.config(bg="#FEF3C7")
         
-        # Actualizar estadísticas
         self.update_statistics()
     
     def assign_class(self, class_id):
         """Asignar clase a la imagen actual"""
-        if self.current_index >= len(self.images):
+        if not self.images or self.current_index >= len(self.images):
             return
         
         image_name = self.images[self.current_index]
         self.labels[image_name] = class_id
         self.save_labels()
         
-        # Feedback visual
         class_name, color, _ = self.class_info[class_id]
         self.current_label_text.config(
             text=f"✓ {class_name}", 
@@ -494,11 +684,9 @@ class ImageLabeler:
         )
         self.current_label_frame.config(bg=color)
         
-        # Auto-avanzar después de un breve delay
         self.root.after(200, self.next_image)
     
     def next_image(self):
-        """Ir a la siguiente imagen"""
         if self.current_index < len(self.images) - 1:
             self.current_index += 1
             self.load_image()
@@ -510,20 +698,18 @@ class ImageLabeler:
             )
     
     def previous_image(self):
-        """Ir a la imagen anterior"""
         if self.current_index > 0:
             self.current_index -= 1
             self.load_image()
     
     def update_statistics(self):
-        """Actualizar estadísticas de etiquetado"""
         stats = {}
         for img_name, class_id in self.labels.items():
             if img_name in self.images:
                 stats[class_id] = stats.get(class_id, 0) + 1
         
         stats_text = ""
-        for class_id in range(1, 6):  # Cambiado de range(5) a range(1, 6)
+        for class_id in range(1, 6):
             count = stats.get(class_id, 0)
             name = self.class_info[class_id][0].split(' - ')[1]
             stats_text += f"Clase {class_id} ({name}): {count}\n"
@@ -531,7 +717,6 @@ class ImageLabeler:
         self.stats_label.config(text=stats_text)
     
     def finish_labeling(self):
-        """Finalizar proceso de etiquetado"""
         labeled = len([k for k in self.labels if k in self.images])
         total = len(self.images)
         
@@ -539,7 +724,7 @@ class ImageLabeler:
             messagebox.showwarning(
                 "Sin Etiquetas",
                 "No has etiquetado ninguna imagen.\n\n"
-                "Etiqueta al menos algunas imágenes antes de continuar."
+                "Etiqueta al menos algunas imágenes o usa 'Importar desde Carpetas'."
             )
             return
         
@@ -553,10 +738,8 @@ class ImageLabeler:
             if not response:
                 return
         
-        # Guardar etiquetas finales
         self.save_labels()
         
-        # Mostrar resumen
         summary = f"✅ Etiquetado completado!\n\n"
         summary += f"📊 Total etiquetado: {labeled} de {total} imágenes\n"
         summary += f"📁 Guardado en: {self.labels_file}\n\n"
@@ -574,7 +757,8 @@ class ImageLabeler:
                 summary += f"  • {name}: {count}\n"
         
         summary += f"\n🎯 Ahora puedes entrenar los modelos\n"
-        summary += f"   ejecutando: python main.py"
+        summary += f"   con el botón 'Entrenar Todos los Modelos'\n"
+        summary += f"   o ejecutando: python entrenar_todos.py"
         
         messagebox.showinfo("Completado", summary)
         self.root.destroy()

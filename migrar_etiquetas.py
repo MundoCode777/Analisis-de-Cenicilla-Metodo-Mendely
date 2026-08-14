@@ -1,6 +1,3 @@
-"""
-Script para migrar etiquetas de 0-4 a 1-5
-"""
 import json
 import os
 

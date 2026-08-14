@@ -1,4 +1,13 @@
 {
-  "val_accuracy": 0.41999998688697815,
-  "samples": 500
+  "samples": 500,
+  "train_split": 400,
+  "val_split": 100,
+  "val_accuracy": 0.8199999928474426,
+  "classes": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ]
 }
